@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/local/agent-context-bridge/schemas/agent-work-bundle.v0.1.schema.json",
+  "title": "Agent Work Bundle",
+  "description": "Neutral intermediate format for cross-agent context migration (v0.1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest", "repo_context", "work_state"],
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "source_agent", "created_at", "loss_report"],
+      "properties": {
+        "version": { "const": "0.1" },
+        "source_agent": { "type": "string", "minLength": 1 },
+        "target_agent": { "type": "string" },
+        "created_at": { "type": "string", "minLength": 1 },
+        "project_root": { "type": "string" },
+        "loss_report": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/loss_report_entry" }
+        }
+      }
+    },
+    "repo_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rules", "skills", "mcp_servers", "instructions_files"],
+      "properties": {
+        "agents_md": { "type": "string" },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rule_entry" }
+        },
+        "skills": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/skill_entry" }
+        },
+        "mcp_servers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mcp_server_entry" }
+        },
+        "instructions_files": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/instructions_file" }
+        }
+      }
+    },
+    "work_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions",
+        "open_loops",
+        "file_anchors",
+        "constraints",
+        "known_pitfalls"
+      ],
+      "properties": {
+        "goal": { "type": "string" },
+        "decisions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/decision" }
+        },
+        "open_loops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/open_loop" }
+        },
+        "file_anchors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/file_anchor" }
+        },
+        "constraints": { "type": "array", "items": { "type": "string" } },
+        "known_pitfalls": { "type": "array", "items": { "type": "string" } },
+        "last_summary": { "type": "string" }
+      }
+    },
+    "transcript": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messages"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transcript_message" }
+        },
+        "source_session_id": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "loss_report_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "severity"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "warn", "error"] },
+        "path": { "type": "string" }
+      }
+    },
+    "rule_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "content"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "content": { "type": "string" },
+        "always_apply": { "type": "boolean" },
+        "description": { "type": "string" },
+        "globs": { "type": "array", "items": { "type": "string" } },
+        "source_path": { "type": "string" }
+      }
+    },
+    "skill_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "skill_md"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "skill_md": { "type": "string" },
+        "source_path": { "type": "string" },
+        "extras": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "mcp_server_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "config"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "config": {
+          "type": "object",
+          "properties": {
+            "command": { "type": "string" },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "env": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "url": { "type": "string" },
+            "headers": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          },
+          "additionalProperties": true
+        },
+        "source_path": { "type": "string" }
+      }
+    },
+    "instructions_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "content"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "content": { "type": "string" },
+        "source_path": { "type": "string" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string" },
+        "decided_at": { "type": "string" }
+      }
+    },
+    "open_loop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "priority": { "enum": ["low", "medium", "high"] },
+        "status": { "enum": ["open", "blocked", "done"] }
+      }
+    },
+    "file_anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" }
+      }
+    },
+    "transcript_message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "content": { "type": "string" },
+        "tool_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "arguments": true,
+              "result": true
+            }
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "mime": { "type": "string" },
+              "omitted": { "type": "boolean" }
+            }
+          }
+        },
+        "dropped_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "timestamp": { "type": "string" }
+      }
+    }
+  }
+}
