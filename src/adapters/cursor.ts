@@ -222,7 +222,7 @@ export const cursorAdapter: AgentAdapter = {
     losses.push(
       loss(
         "work_state.not_inferred",
-        "Layer 1 work_state summarization is not implemented; empty work_state emitted. Fill manually or wait for summarize command.",
+        "Export leaves work_state empty. Run `acb summarize` to fill it from a Cursor session or notes.",
         "info",
       ),
     );

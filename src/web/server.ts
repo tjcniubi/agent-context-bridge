@@ -33,6 +33,17 @@ import {
   type RepairSession,
 } from "../repair/guide.js";
 import { isDirectory, writeText } from "../utils/fs.js";
+import {
+  applyWorkState,
+  mergeSummary,
+  normalizeLosses,
+  normalizeWorkState,
+  parseAgent,
+  summarizeSessions,
+  summaryLossesFor,
+  type TranscriptText,
+} from "../summarize/run.js";
+import { matchProjectDirectories, type LocateHint } from "./locate.js";
 
 const MAX_BODY = 20 * 1024 * 1024;
 
@@ -260,6 +271,69 @@ async function handleApi(
     return true;
   }
 
+  if (method === "POST" && path === "/api/fs/match") {
+    const body = await readJson(req);
+    const found = await matchProjectDirectories({
+      name: requireString(body, "name"),
+      entries: stringList(body, "entries"),
+      hint: parseHint(body.hint),
+      roots: optionalStringList(body, "roots"),
+    });
+    sendJson(res, 200, found);
+    return true;
+  }
+
+  if (method === "POST" && path === "/api/summarize/preview") {
+    const body = await readJson(req);
+    const project = requireString(body, "project");
+    await assertDirectory(project);
+    const existing = optionalBundle(body.bundle);
+    const result = await summarizeSessions({
+      projectRoot: project,
+      agent: parseAgent(optionalString(body, "agent") ?? "both"),
+      sessionId: optionalString(body, "sessionId"),
+      notesText: optionalString(body, "notesText"),
+      transcriptPaths: optionalStringList(body, "transcripts"),
+      transcriptTexts: transcriptTexts(body),
+      cursorHome: optionalString(body, "cursorHome"),
+      homeDir: optionalString(body, "home"),
+    });
+    const losses = summaryLossesFor(existing?.work_state, result);
+    sendJson(res, 200, {
+      workState: mergeSummary(existing?.work_state, result),
+      losses,
+      sources: result.sources,
+      sourceAgent: result.sourceAgent,
+      summaryMode: result.summaryMode,
+      applied: false,
+    });
+    return true;
+  }
+
+  if (method === "POST" && path === "/api/summarize/apply") {
+    const body = await readJson(req);
+    const existing = optionalBundle(body.bundle);
+    const workState = normalizeWorkState(body.workState);
+    const bundle = applyWorkState({
+      existing,
+      workState,
+      summaryLosses: normalizeLosses(body.losses),
+      projectRoot: optionalString(body, "project"),
+      sourceAgent: optionalString(body, "sourceAgent") ?? existing?.manifest.source_agent,
+      confirmed: true,
+    });
+    const check = validateBundle(bundle);
+    if (!check.ok) throw new UserInputError("Bundle failed validation:", check.errors);
+    const valid = check.bundle as AgentWorkBundle;
+    sendJson(res, 200, {
+      bundle: valid,
+      losses: valid.manifest.loss_report,
+      summary: summarize(valid, valid.manifest.loss_report),
+      applied: true,
+    });
+    return true;
+  }
+
   if (method === "POST" && path === "/api/work-state/write") {
     const body = await readJson(req);
     const project = requireString(body, "project");
@@ -411,6 +485,48 @@ function requireString(body: JsonRecord, key: string): string {
     throw new UserInputError(`缺少字段 ${key}。`);
   }
   return value.trim();
+}
+
+function optionalBundle(value: unknown): AgentWorkBundle | undefined {
+  if (value === undefined || value === null) return undefined;
+  const check = validateBundle(value);
+  if (!check.ok) throw new UserInputError("Bundle failed validation:", check.errors);
+  return check.bundle;
+}
+
+function stringList(body: JsonRecord, key: string): string[] {
+  const value = body[key];
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new UserInputError(`${key} 必须是字符串数组。`);
+  }
+  return value.map((item) => item.trim()).filter(Boolean);
+}
+
+function optionalStringList(body: JsonRecord, key: string): string[] | undefined {
+  if (body[key] === undefined || body[key] === null) return undefined;
+  return stringList(body, key);
+}
+
+function parseHint(value: unknown): LocateHint | undefined {
+  if (value === undefined || value === null) return undefined;
+  const row = asRecord(value);
+  if (typeof row.name !== "string" || typeof row.sha256 !== "string") {
+    throw new UserInputError("hint 需要 name 和 sha256。");
+  }
+  return { name: row.name, sha256: row.sha256 };
+}
+
+function transcriptTexts(body: JsonRecord): TranscriptText[] {
+  const value = body.transcriptTexts;
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new UserInputError("transcriptTexts 必须是数组。");
+  return value.slice(0, 20).map((item, index) => {
+    const row = asRecord(item);
+    if (typeof row.text !== "string") throw new UserInputError("transcriptTexts 需要 text。");
+    const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : `transcript-${index}.txt`;
+    return { name, text: row.text };
+  });
 }
 
 function optionalString(body: JsonRecord, key: string): string | undefined {

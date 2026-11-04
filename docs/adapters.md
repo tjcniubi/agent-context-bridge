@@ -36,7 +36,11 @@
 | Chat metadata | `~/.cursor/chats/<workspace-hash>/<session-id>/store.db` | ⚠️ SQLite；v0.1 不解析 |
 | Subagents | `…/agent-transcripts/<id>/subagents/*.jsonl` | ⚠️ 有损 |
 
-`slug` 通常由工作区路径编码（`/` → `-`），**无官方稳定 API**，跨机器可能对不上。
+`slug` 通常由工作区路径编码（去掉盘符冒号和开头的 `/`，再把 `/` 换成 `-`），**无官方稳定 API**，跨机器可能对不上。`acb summarize` 只在精确 slug 命中，或唯一的目录名回退命中时读取 JSONL。多个候选时一条都不读，并写入 `cursor.session.ambiguous_project`。
+
+### Layer 1（`acb summarize`）
+
+`acb summarize` 读取最近一个父会话的 JSONL（可用 `--session` 指定），跳过 `subagents/`。工具结果、附件和思考块不进入 Work State，并记入 `loss_report`。这是规则抽取，不是完整 transcript 恢复，也不会把消息写进 bundle 的 `transcript` 字段。
 
 ---
 
@@ -74,6 +78,8 @@
 | 国际版 | 可能为 `…/Trae/…`（无 CN 后缀） | **未在本环境实测** → open question |
 
 **结论**：Layer 3 对 Trae 优先建议用户使用 IDE 自带 **Export Chat**；自动化解密不在本项目范围（且涉及破解类风险，不做）。
+
+`acb summarize` 若在上述路径发现 `database.db`，只记录 `transcript.trae_encrypted`，不打开、不解密。明文导出通过 `--transcript`、`--notes`，或本地页面里选择的文本文件进入 Work State。
 
 ---
 
