@@ -16,7 +16,7 @@
    - [x] Trae 加密库不读取；发现 `database.db` 只记 `transcript.trae_encrypted`。明文用 `--transcript` 或 `--notes`  
    - [x] 导入时只要 `work_state` 非空就生成 `.acb/WORK_STATE.md`  
    - [x] 本地 Web：生成摘要预览，可编辑，确认后才写入 bundle  
-   - [ ] 用模型提高摘要质量（可选，仍须输出 `loss_report`）
+   - [x] 用模型提高摘要质量（可选，仍须输出 `loss_report`）。`acb summarize --model` 调用 OpenAI 兼容接口；失败回退规则抽取，并记 `work_state.model_drafted` / `work_state.model_failed`
 
 4. **Lossy transcript** ✅  
    - [x] Cursor：解析 `agent-transcripts/**/*.jsonl` → `transcript`（标记 dropped_fields；子代理在体积允许时附上）。`summarize` 只用文本抽 Work State，不负责写入 `transcript`  
@@ -30,7 +30,7 @@
    - [x] Cursor ↔ Trae 导出 / 导入 / 转换，并展示 `loss_report`  
    - [x] 修复向导逐条提问并起草 Work State；单条或批量确认 / 拒绝之后才写入  
    - [x] 会话摘要预览，确认后才写入 Work State  
-   - [ ] 可选外部模型起草；确认之后才写入的门槛保持不变
+   - [x] 可选外部模型起草（摘要预览和修复向导共用本机环境变量）；确认之后才写入的门槛保持不变
 
 ## 之后
 

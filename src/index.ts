@@ -177,6 +177,10 @@ program
   .option("--home <dir>", "Override the home directory used to detect a Trae chat database")
   .option("--max-sessions <n>", "How many recent Cursor sessions to read", "1")
   .option("--write-sidecar", "Also write <project>/.acb/WORK_STATE.md", false)
+  .option("--model", "Draft Work State with an OpenAI-compatible model; fall back to rules on failure", false)
+  .option("--model-name <id>", "Model id. Overrides ACB_MODEL and the config file. Requires --model")
+  .option("--model-base-url <url>", "API base URL. Overrides ACB_MODEL_BASE_URL. Requires --model")
+  .option("--model-config <path>", "JSON config (model, baseUrl, optional apiKey). Requires --model. The key is not a flag")
   .action(async (opts) => {
     process.exitCode = await runSummarize({
       project: opts.project,
@@ -191,6 +195,10 @@ program
       home: opts.home,
       maxSessions: opts.maxSessions,
       writeSidecar: opts.writeSidecar,
+      model: opts.model,
+      modelName: opts.modelName,
+      modelBaseUrl: opts.modelBaseUrl,
+      modelConfig: opts.modelConfig,
     });
   });
 

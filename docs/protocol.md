@@ -62,6 +62,8 @@ Work State 与诚实的 `loss_report` 是一等字段。对话层明确标为有
 | `repair.applied` | 用户确认草案，对应内容已经进入 `work_state` |
 | `repair.skipped` | 用户确认跳过，不修改 `work_state` |
 | `repair.declined` | 用户拒绝草案，不修改 `work_state` |
+| `work_state.model_drafted` | 请求了外部模型，并且草案来自模型。摘要预览在确认写入 bundle 时带上；修复向导在确认或拒绝时带上 |
+| `work_state.model_failed` | 请求了外部模型但没有用上（没有密钥、调用失败、空草案等），已回退规则抽取 |
 
 ---
 
@@ -118,7 +120,7 @@ Work State 与诚实的 `loss_report` 是一等字段。对话层明确标为有
 
 Markdown companion：导入时若目标端无原生 Work State，适配器写入 `.acb/WORK_STATE.md` 供手动 `@`。
 
-`acb summarize` 用规则从可读的 Cursor JSONL、笔记或明文导出填充这些字段，并在 `loss_report` 写明没读到的部分。Trae 本地聊天库若已加密，只记录损失，不解密。这不是模型摘要，也不会把完整对话写进 `transcript`。本地页面会先给出可编辑的预览，确认之后才写入 bundle。
+`acb summarize` 默认用规则从可读的 Cursor JSONL、笔记或明文导出填充这些字段，并在 `loss_report` 写明没读到的部分。加上 `--model`（或在本地页面勾选）时，可以用 OpenAI 兼容接口起草；失败会回退到规则抽取，并留下 `work_state.model_failed`。成功留下 `work_state.model_drafted`。协议版本仍是 `0.1`，模型开关不进 schema。Trae 本地聊天库若已加密，只记录损失，不解密。无论是否使用模型，都不会把完整对话写进 `transcript`。本地页面会先给出可编辑的预览，确认之后才写入 bundle。
 
 ---
 
