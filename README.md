@@ -4,7 +4,7 @@
 
 第一批适配器是 **Cursor ↔ Trae**。仓库级配置（`AGENTS.md`、rules、skills、MCP）会跟着走，但它是支撑层，不是这个项目的主旨。
 
-> **English:** A CLI and local web UI that carry work across AI coding agents through a neutral Agent Work Bundle. Cursor ↔ Trae come first. The point is Work State plus an honest `loss_report`, not a bigger config copier. Transcripts are modeled as lossy but still readable. The web repair guide drafts Work State and writes it only after you confirm.
+> **English:** A CLI and local web UI that carry work across AI coding agents through a neutral Agent Work Bundle. Cursor ↔ Trae come first. The point is Work State plus an honest `loss_report`, not a bigger config copier. `acb summarize` fills Work State from readable session text with a loss report. It does not recover a full transcript, and it does not decrypt an encrypted Trae chat database. The local page can pick a project folder or bundle file, preview Work State, and write it only after you confirm.
 
 ## 为什么存在
 
@@ -26,12 +26,12 @@
 | Layer | 内容 | v0.1 状态 |
 |-------|------|-----------|
 | 0 | 仓库级持久上下文：`AGENTS.md`、rules、skills、MCP | 项目级骨架可用。嵌套 `AGENTS.md`、子目录 rules、以及 `--include-user` 的用户级配置尚未扫全，缺口写入 `loss_report` |
-| 1 | Work State（目标、决策、开放环、文件锚点、约束、已知坑） | 协议字段和导入 sidecar（`.acb/WORK_STATE.md`）可用。`export` 不会从会话自动摘要，会写出空的 `work_state` 并记录 `work_state.not_inferred`。手写或示例 bundle 可以带上完整状态 |
+| 1 | Work State（目标、决策、开放环、文件锚点、约束、已知坑） | `acb summarize` 可用。它从 Cursor JSONL、笔记或明文导出做规则抽取，并写 `loss_report`。`export` 本身仍写出空的 `work_state` 和 `work_state.not_inferred`。Trae 加密聊天库不读取 |
 | 2/3 | 有损对话 | 协议字段可用（见示例 bundle）。适配器是 stub：`--session` 只记损失，不解析 Cursor JSONL，也不写入 Trae 加密库 |
 
-本地 Web 已能完成导出、导入、转换，并按 `loss_report` 做确认式修复。`export` 仍然不会从会话自动摘要。
+本地 Web 已能完成导出、导入、转换、会话摘要预览，并按 `loss_report` 做确认式修复。`export` 仍然不会从会话自动摘要，需要单独跑 `acb summarize` 或页面上的「生成摘要预览」。
 
-即将做的事（尚未实现）：`acb summarize`、嵌套规则扫描、真正的用户级配置读写、MCP `env` 脱敏、从 Cursor JSONL 抽出 transcript。详见 [`ROADMAP.md`](ROADMAP.md)。
+即将做的事（尚未实现）：嵌套规则扫描、真正的用户级配置读写、MCP `env` 脱敏、把 Cursor JSONL 写进 bundle 的 `transcript`。详见 [`ROADMAP.md`](ROADMAP.md)。
 
 ## 快速开始
 
@@ -52,6 +52,10 @@ node dist/index.js import -a trae -p /path/to/project -f out.bundle.json --dry-r
 # 同仓库 Cursor → Trae 一键转换
 node dist/index.js convert --from cursor --to trae -p /path/to/project -o bridge.bundle.json
 
+# 从笔记或 Cursor 会话填充 Work State（不写文件，直到给出 -o）
+node dist/index.js summarize -p /path/to/project --notes notes.md
+node dist/index.js summarize -p /path/to/project -o out.bundle.json
+
 # 本地 Web（构建页面并监听 127.0.0.1:4173）
 npm run web
 ```
@@ -66,6 +70,7 @@ npm run web
 |------|------|
 | `acb validate <file>` | 按 v0.1 Zod/Schema 校验 bundle |
 | `acb export -a <cursor\|trae> -p <dir> -o <file>` | 导出项目级 repo context。Work State 与 transcript 在 v0.1 不会自动填充 |
+| `acb summarize` | 从 Cursor JSONL、`--notes` 或 `--transcript` 填充 Work State，并写诚实的 `loss_report`。默认只预览；`-o` 才写入 bundle |
 | `acb import -a <…> -p <dir> -f <file>` | 写入目标端目录布局；已有 Work State 时附带 `.acb/WORK_STATE.md` |
 | `acb convert --from … --to … -p <dir>` | 先导出再导入。`-o` / `--out-bundle` 保留中间 bundle。`--dry-run` 仍会导出，导入只预演 |
 | `acb adapters` | 列出适配器与项目级路径 |
@@ -79,11 +84,12 @@ npm run web
 
 页面和 CLI 共用同一套适配器、Zod 校验和 Work State Markdown。
 
-1. 填写项目路径，或上传一份 bundle。
+1. 粘贴项目路径，或用「选择项目文件夹」。浏览器选中的文件夹没有绝对路径，本机服务会按目录名和其中的文件定位；对不上时仍用路径框或「服务器目录」。bundle 用「选择 bundle 文件」读取内容。
 2. 在 Cursor 与 Trae 之间导出、导入或转换，并查看 `loss_report`。勾选预演时，导入不写项目文件。
-3. 开始逐条修复。向导按损失项提问，根据回答起草 Work State。
-4. 每一条草案都要确认或拒绝之后才写入。也可以一次确认或拒绝全部待定草案。对话里输入「确认」「拒绝」「修改」「全部确认」「全部拒绝」，效果和按钮相同。
-5. 下载更新后的 bundle，或把已确认的内容写到项目里的 `.acb/WORK_STATE.md`。
+3. 「生成摘要预览」从可读会话或笔记抽出 Work State。预览可以改，确认后才进入当前 bundle。加密的 Trae 聊天库不会读取。
+4. 开始逐条修复。向导按损失项提问，根据回答起草 Work State。
+5. 每一条草案都要确认或拒绝之后才写入。也可以一次确认或拒绝全部待定草案。对话里输入「确认」「拒绝」「修改」「全部确认」「全部拒绝」，效果和按钮相同。
+6. 下载更新后的 bundle，或把已确认的内容写到项目里的 `.acb/WORK_STATE.md`。
 
 未确认的草案不会进入 bundle，也不会写进项目。拒绝和确认跳过都会留在 `loss_report` 里（`repair.declined` / `repair.skipped`）；确认写入记为 `repair.applied`。
 
@@ -117,4 +123,4 @@ Bundle 中的 MCP `env` 在 v0.1 **不会**自动脱敏。不要把含密钥的 
 
 ## 贡献 / 下一步
 
-见 [`ROADMAP.md`](ROADMAP.md)。本地 Web 与确认式修复已经可用。建议的下一编码步：补全嵌套 rules / `AGENTS.md` 扫描，并实现 `acb summarize`（Layer 1）。
+见 [`ROADMAP.md`](ROADMAP.md)。`acb summarize` 与本地确认式修复已经可用。建议的下一编码步：补全嵌套 rules / `AGENTS.md` 扫描，并把有损 transcript 写进 bundle。

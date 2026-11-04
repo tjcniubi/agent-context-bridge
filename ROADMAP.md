@@ -11,20 +11,24 @@
    - [ ] `--include-user` 真正读写 `~/.cursor/*` 与 `~/.trae/skills|user_rules`  
    - [ ] MCP env 脱敏与 dry-run diff
 
-3. **work_state summarize**  
-   - [ ] `acb summarize`：从最近 Cursor JSONL（或粘贴的笔记）抽出 goal / decisions / open_loops  
-   - [ ] 导入时默认生成高质量 `.acb/WORK_STATE.md`  
-   - [ ] 可选：写入目标端可 `@` 的固定文件名约定
+3. **work_state summarize** ✅  
+   - [x] `acb summarize`：最近的 Cursor JSONL，或笔记 / 明文导出 → goal、decisions、open_loops、file_anchors、constraints、known_pitfalls、last_summary，并写 `loss_report`  
+   - [x] Trae 加密库不读取；发现 `database.db` 只记 `transcript.trae_encrypted`。明文用 `--transcript` 或 `--notes`  
+   - [x] 导入时只要 `work_state` 非空就生成 `.acb/WORK_STATE.md`  
+   - [x] 本地 Web：生成摘要预览，可编辑，确认后才写入 bundle  
+   - [ ] 用模型提高摘要质量（可选，仍须输出 `loss_report`）
 
 4. **Lossy transcript**  
-   - [ ] Cursor：解析 `agent-transcripts/**/*.jsonl` → `transcript`（标记 dropped_fields）  
-   - [ ] Trae：引导 Export Chat / 明确加密库不可自动导入  
+   - [ ] Cursor：把 `agent-transcripts/**/*.jsonl` 写入 bundle `transcript`（标记 dropped_fields）。`summarize` 只用其中的文本抽 Work State，不回写 transcript  
+   - [x] Trae：加密库不可自动导入；明文 Export Chat 交给 `acb summarize`  
    - [ ] `convert --with-transcript` 开关与体积限制
 
 5. **本地 Web 与交互式修复** ✅  
    - [x] `npm run web` / `acb web`，默认只监听 `127.0.0.1`  
-   - [x] 项目路径或上传 bundle；Cursor ↔ Trae 导出 / 导入 / 转换，并展示 `loss_report`  
+   - [x] 项目路径可手填，也可用系统文件夹选择器；bundle 可用系统文件选择器  
+   - [x] Cursor ↔ Trae 导出 / 导入 / 转换，并展示 `loss_report`  
    - [x] 修复向导逐条提问并起草 Work State；单条或批量确认 / 拒绝之后才写入  
+   - [x] 会话摘要预览，确认后才写入 Work State  
    - [ ] 可选外部模型起草；确认之后才写入的门槛保持不变
 
 ## 之后

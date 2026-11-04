@@ -31,7 +31,7 @@ export async function runWeb(opts: WebCliOptions): Promise<number> {
     dev: opts.dev,
   });
   console.log(`acb web  ${started.url}`);
-  console.log("Local only. Export, import, and repair stay on this machine.");
+  console.log("Local only. Export, import, summarize, and repair stay on this machine.");
   console.log("Press Ctrl+C to stop.");
 
   await new Promise<void>((resolve) => {
