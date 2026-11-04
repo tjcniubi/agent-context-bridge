@@ -40,7 +40,11 @@
 | Chat metadata | `~/.cursor/chats/<workspace-hash>/<session-id>/store.db` | ❌ 不解析数据库 |
 | 明文导出 | `--session` 指向的 `.md` / `.txt` / `.json` / `.jsonl` | ✅ 有损。Web 只接受项目目录之内的路径 |
 
-`slug` 通常由工作区路径编码（`/` → `-`），**无官方稳定 API**，跨机器可能对不上。
+`slug` 通常由工作区路径编码（去掉盘符冒号和开头的 `/`，再把 `/` 换成 `-`），**无官方稳定 API**，跨机器可能对不上。`acb summarize` 只在精确 slug 命中，或唯一的目录名回退命中时读取 JSONL。多个候选时一条都不读，并写入 `cursor.session.ambiguous_project`。
+
+### Layer 1（`acb summarize`）
+
+`acb summarize` 读取最近一个父会话的 JSONL（可用 `--session` 指定），跳过 `subagents/`。工具结果、附件和思考块不进入 Work State，并记入 `loss_report`。这是规则抽取，不是完整 transcript 恢复，也不会把消息写进 bundle 的 `transcript` 字段。完整对话进 `transcript` 走 `acb transcript` 或 `export --include-transcript`。
 
 ---
 
@@ -80,6 +84,8 @@ JSON 数组或 YAML 列表形式的 `globs` 写入 Trae 时会收成逗号分隔
 | 国际版 | 可能为 `…/Trae/…`（无 CN 后缀） | **未在本环境实测** → open question |
 
 **结论**：把 IDE 的 **Export Chat** 明文放到 `.acb/imports/transcript.md`（或 `.trae/exports/`，或用 `--session` 指向该文件）。`database.db` 及任何 SQLite / ModularData 路径都不会打开。导入聊天界面同样不做；确认之后只写 `.acb/TRANSCRIPT.md`。
+
+`acb summarize` 若在上述路径发现 `database.db`，只记录 `transcript.trae_encrypted`，不打开、不解密。明文导出通过 `--transcript`、`--notes`，或本地页面里选择的文本文件进入 Work State。
 
 ---
 

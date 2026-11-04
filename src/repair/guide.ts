@@ -130,7 +130,7 @@ function cloneSession(session: RepairSession): RepairSession {
 
 function guideHint(code: string): string {
   if (code === "work_state.not_inferred" || code === "work_state.manual") {
-    return "导出时没有自动摘要。请写下当前目标、已经拍板的决定，以及还没做完的事。";
+    return "导出时没有自动摘要。可以先用「生成摘要预览」，或写下当前目标、已经拍板的决定，以及还没做完的事。";
   }
   if (code.startsWith("transcript.")) {
     return "对话没有进入目标端的聊天界面。请把必须记住的结论写成摘要；工具结果里的关键事实也写在这里。";

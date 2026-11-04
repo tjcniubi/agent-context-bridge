@@ -118,6 +118,8 @@ Work State 与诚实的 `loss_report` 是一等字段。对话层明确标为有
 
 Markdown companion：导入时若目标端无原生 Work State，适配器写入 `.acb/WORK_STATE.md` 供手动 `@`。
 
+`acb summarize` 用规则从可读的 Cursor JSONL、笔记或明文导出填充这些字段，并在 `loss_report` 写明没读到的部分。Trae 本地聊天库若已加密，只记录损失，不解密。这不是模型摘要，也不会把完整对话写进 `transcript`。本地页面会先给出可编辑的预览，确认之后才写入 bundle。
+
 ---
 
 ## `transcript`（可选，有损）

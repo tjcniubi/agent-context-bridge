@@ -1,6 +1,14 @@
 import type { AgentWorkBundle, LossReportEntry } from "../../src/protocol/types.ts";
 import { hasWorkStateContent, renderWorkStateMarkdown } from "../../src/protocol/work-state-markdown.ts";
 import { api, type AdapterInfo, type BundleResponse, type FileChange, type RepairSessionView } from "./api.ts";
+import {
+  armFileInput,
+  fingerprintFromFiles,
+  tryNativeBundleFile,
+  tryNativeDirectory,
+  tryNativeTextFile,
+} from "./pickers.ts";
+import { buildSummaryEditor, type SummaryPreview } from "./summary-editor.ts";
 
 interface DirListing {
   path: string;
@@ -34,6 +42,9 @@ const state: AppState = {
   dir: null,
 };
 
+let summaryDraft: SummaryPreview | null = null;
+let attachedTranscripts: { name: string; text: string }[] = [];
+
 const app = document.querySelector("#app");
 if (!app) throw new Error("缺少 #app");
 
@@ -47,7 +58,7 @@ app.innerHTML = `
           <h1>Agent Context Bridge</h1>
         </div>
       </div>
-      <p class="lede">在本机把项目或 bundle 在 Cursor 与 Trae 之间导出、导入、转换。修复向导会逐条询问损失清单，起草 Work State，并在你确认之后才写入。有损 transcript 可以预览，确认之后才写成 sidecar。</p>
+      <p class="lede">在本机把项目或 bundle 在 Cursor 与 Trae 之间导出、导入、转换。可以用系统文件夹和文件选择器指定路径。会话摘要和有损 transcript 都先出预览，确认之后才写入。</p>
     </header>
     <div id="error" class="banner error" hidden></div>
     <div class="layout">
@@ -55,12 +66,15 @@ app.innerHTML = `
         <h2>来源</h2>
         <div class="stack">
           <label>项目路径
-            <span class="path-row">
-              <input id="project" type="text" placeholder="/path/to/project" autocomplete="off" />
-              <button id="browse" class="secondary" type="button">浏览</button>
-            </span>
+            <input id="project" type="text" placeholder="/path/to/project" autocomplete="off" />
           </label>
-          <p class="hint">路径由本机服务读取。页面默认只监听回环地址。</p>
+          <div class="actions">
+            <button id="pick-dir" type="button">选择项目文件夹</button>
+            <button id="browse" class="secondary" type="button">服务器目录</button>
+          </div>
+          <p id="pick-hint" class="hint">可以直接粘贴绝对路径。选择文件夹后，本机会按目录名和其中的文件定位路径。页面默认只监听回环地址。</p>
+          <div id="pick-matches" class="match-list"></div>
+          <input id="pick-dir-input" type="file" hidden />
           <div class="pair">
             <label>来源
               <select id="from-agent"></select>
@@ -82,9 +96,10 @@ app.innerHTML = `
             <button id="convert" type="button">转换到目标</button>
             <button id="import" class="secondary" type="button">导入到目标</button>
           </div>
-          <label class="file">上传 bundle
-            <input id="bundle-file" type="file" accept="application/json,.json" />
-          </label>
+          <div class="actions">
+            <button id="pick-bundle" class="secondary" type="button">选择 bundle 文件</button>
+          </div>
+          <input id="bundle-file" type="file" accept="application/json,.json" hidden />
         </div>
       </section>
       <section class="panel">
@@ -108,6 +123,29 @@ app.innerHTML = `
         </div>
       </section>
     </div>
+    <section class="panel summarize">
+      <h2>会话摘要</h2>
+      <p class="hint">从 Cursor 的可读会话、笔记，或 Trae 的明文导出抽出 Work State。加密的 Trae 聊天库不会读取。预览可以改，确认后才写入当前 bundle。</p>
+      <div class="stack">
+        <label>摘要来源
+          <select id="summary-agent">
+            <option value="both">Cursor 和 Trae</option>
+            <option value="cursor">Cursor</option>
+            <option value="trae">Trae</option>
+          </select>
+        </label>
+        <label>笔记（可选，带标题时优先）
+          <textarea id="summary-notes" placeholder="## 目标&#10;把规则迁过去"></textarea>
+        </label>
+        <div class="actions">
+          <button id="pick-notes" class="secondary" type="button">选择笔记或 transcript 文件</button>
+          <button id="summarize" type="button">生成摘要预览</button>
+        </div>
+        <p id="notes-hint" class="hint"></p>
+        <input id="notes-file" type="file" accept=".md,.txt,.json,.jsonl,text/plain,application/json" hidden />
+        <div id="summary-editor"></div>
+      </div>
+    </section>
     <section class="panel repair">
       <h2>交互式修复</h2>
       <p id="repair-progress" class="meta">确认之前，草案只停在对话里。</p>
@@ -164,6 +202,10 @@ async function boot(): Promise<void> {
     ]);
   }
   el<HTMLInputElement>("project").value = "";
+  const dirInput = el<HTMLInputElement>("pick-dir-input");
+  dirInput.multiple = true;
+  dirInput.setAttribute("webkitdirectory", "");
+  dirInput.setAttribute("directory", "");
   bind();
   render();
 }
@@ -197,6 +239,10 @@ function fillAgents(adapters: AdapterInfo[]): void {
 
 function bind(): void {
   el<HTMLButtonElement>("browse").addEventListener("click", () => void run(() => openDir()));
+  el<HTMLButtonElement>("pick-dir").addEventListener("click", () => void run(() => doPickDir()));
+  el<HTMLButtonElement>("pick-bundle").addEventListener("click", () => void run(() => doPickBundle()));
+  el<HTMLButtonElement>("pick-notes").addEventListener("click", () => void run(() => doPickNotes()));
+  el<HTMLButtonElement>("summarize").addEventListener("click", () => void run(() => doPreview()));
   el<HTMLInputElement>("project").addEventListener("input", () => syncControls());
   el<HTMLButtonElement>("export").addEventListener("click", () => void run(() => doExport()));
   el<HTMLButtonElement>("convert").addEventListener("click", () => void run(() => doConvert()));
@@ -205,7 +251,6 @@ function bind(): void {
   el<HTMLButtonElement>("start-repair").addEventListener("click", () => void run(() => doStartRepair()));
   el<HTMLButtonElement>("write-sidecar").addEventListener("click", () => void run(() => doWriteSidecar()));
   el<HTMLButtonElement>("apply-transcript").addEventListener("click", () => void run(() => doApplyTranscript()));
-  el<HTMLInputElement>("bundle-file").addEventListener("change", () => void run(() => doUpload()));
   el<HTMLFormElement>("repair-form").addEventListener("submit", (event) => {
     event.preventDefault();
     void run(() => doAnswer());
@@ -295,21 +340,170 @@ async function doImport(): Promise<void> {
   adopt(result, result.dryRun ? "导入已预演，项目文件没有改动。" : "导入完成。");
 }
 
-async function doUpload(): Promise<void> {
-  const input = el<HTMLInputElement>("bundle-file");
-  const file = input.files?.[0];
-  if (!file) return;
+async function doPickDir(): Promise<void> {
+  const native = await tryNativeDirectory();
+  if (native === null) return;
+  if (native === "fallback") {
+    armFileInput(el<HTMLInputElement>("pick-dir-input"), (files) => {
+      void run(async () => {
+        const fingerprint = await fingerprintFromFiles(files);
+        if (!fingerprint) throw new Error("没有从选择的文件夹里读到文件。");
+        await locateDirectory(fingerprint);
+      });
+    });
+    return;
+  }
+  await locateDirectory(native);
+}
+
+async function locateDirectory(fingerprint: {
+  name: string;
+  entries: string[];
+  hint?: { name: string; sha256: string };
+}): Promise<void> {
+  const result = await api<{ matches: string[]; truncated: boolean }>("/api/fs/match", {
+    method: "POST",
+    body: fingerprint,
+  });
+  showMatches(result.matches, result.truncated);
+}
+
+function showMatches(paths: string[], truncated: boolean): void {
+  const box = el<HTMLElement>("pick-matches");
+  const hint = el<HTMLElement>("pick-hint");
+  box.replaceChildren();
+  if (paths.length === 1) {
+    el<HTMLInputElement>("project").value = paths[0] ?? "";
+    hint.textContent = truncated
+      ? "已填入定位到的路径。搜索提前结束，如果不是这个目录，请改路径或用「服务器目录」。"
+      : "已填入定位到的项目路径。";
+    return;
+  }
+  if (paths.length === 0) {
+    hint.textContent = truncated
+      ? "搜索提前结束，还没有定位到这个文件夹。请粘贴路径，或用「服务器目录」。"
+      : "没有在主目录附近定位到这个文件夹。请粘贴路径，或用「服务器目录」。";
+    return;
+  }
+  hint.textContent = "找到多个同名目录，请选一个。";
+  for (const path of paths) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = path;
+    button.addEventListener("click", () => {
+      el<HTMLInputElement>("project").value = path;
+      box.replaceChildren();
+      hint.textContent = "已填入项目路径。";
+    });
+    box.append(button);
+  }
+}
+
+async function doPickBundle(): Promise<void> {
+  const native = await tryNativeBundleFile();
+  if (native === null) return;
+  if (native === "fallback") {
+    armFileInput(el<HTMLInputElement>("bundle-file"), (files) => {
+      const file = files[0];
+      if (file) void run(() => loadBundleFile(file));
+    });
+    return;
+  }
+  await loadBundleFile(native);
+}
+
+async function loadBundleFile(file: File): Promise<void> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await file.text()) as unknown;
   } catch {
-    throw new Error("上传的文件不是合法 JSON。");
+    throw new Error("选择的文件不是合法 JSON。");
   }
   const result = await api<BundleResponse & { ok: boolean }>("/api/validate", {
     method: "POST",
     body: { bundle: parsed },
   });
   adopt(result, `已载入 ${file.name}。`);
+}
+
+async function doPickNotes(): Promise<void> {
+  const native = await tryNativeTextFile();
+  if (native === null) return;
+  if (native === "fallback") {
+    armFileInput(el<HTMLInputElement>("notes-file"), (files) => {
+      const file = files[0];
+      if (file) void run(() => attachNotesFile(file));
+    });
+    return;
+  }
+  await attachNotesFile(native);
+}
+
+async function attachNotesFile(file: File): Promise<void> {
+  let text = await file.text();
+  if (text.length > 500_000) text = text.slice(0, 500_000);
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith(".json") || lower.endsWith(".jsonl")) {
+    attachedTranscripts = [{ name: file.name, text }];
+    el<HTMLElement>("notes-hint").textContent = `已附加 transcript：${file.name}`;
+    return;
+  }
+  const area = el<HTMLTextAreaElement>("summary-notes");
+  area.value = area.value.trim() ? `${area.value.trim()}\n\n${text}` : text;
+  el<HTMLElement>("notes-hint").textContent = `已把 ${file.name} 放进笔记框。`;
+}
+
+async function doPreview(): Promise<void> {
+  const result = await api<SummaryPreview>("/api/summarize/preview", {
+    method: "POST",
+    body: {
+      project: requireProject(),
+      agent: value("summary-agent"),
+      sessionId: value("session-id"),
+      notesText: el<HTMLTextAreaElement>("summary-notes").value,
+      transcriptTexts: attachedTranscripts,
+      bundle: state.bundle,
+    },
+  });
+  summaryDraft = result;
+  paintSummary();
+  state.note = "摘要预览已生成。确认之前，bundle 不会改。";
+}
+
+function paintSummary(): void {
+  const root = el<HTMLElement>("summary-editor");
+  root.replaceChildren();
+  if (!summaryDraft) return;
+  const draft = summaryDraft;
+  root.append(
+    buildSummaryEditor(draft, {
+      onApply: (workState) => void run(() => doApplySummary(workState)),
+      onDiscard: () => {
+        summaryDraft = null;
+        paintSummary();
+        state.note = "已放弃摘要预览。";
+        render();
+      },
+    }),
+  );
+}
+
+async function doApplySummary(workState: SummaryPreview["workState"]): Promise<void> {
+  if (!summaryDraft) throw new Error("请先生成摘要预览。");
+  const result = await api<BundleResponse & { applied: boolean }>("/api/summarize/apply", {
+    method: "POST",
+    body: {
+      bundle: state.bundle,
+      workState,
+      losses: summaryDraft.losses,
+      project: value("project"),
+      sourceAgent: summaryDraft.sourceAgent,
+    },
+  });
+  summaryDraft = null;
+  paintSummary();
+  adopt(result, "已把确认后的 Work State 写入当前 bundle。项目文件还没有改。");
 }
 
 async function doStartRepair(): Promise<void> {
@@ -374,6 +568,8 @@ function adopt(result: BundleResponse, note: string): void {
   state.changes = result.changes ?? [];
   state.dryRun = result.dryRun === true;
   state.repair = null;
+  summaryDraft = null;
+  paintSummary();
   state.note = note;
 }
 
@@ -711,6 +907,10 @@ function syncControls(): void {
   const project = el<HTMLInputElement>("project").value.trim();
   const work = state.repair?.bundle ?? state.bundle;
   setDisabled("browse", busy);
+  setDisabled("pick-dir", busy);
+  setDisabled("pick-bundle", busy);
+  setDisabled("pick-notes", busy);
+  setDisabled("summarize", busy || !project);
   setDisabled("export", busy);
   setDisabled("convert", busy);
   setDisabled("import", busy || !hasBundle);
@@ -719,6 +919,9 @@ function syncControls(): void {
   setDisabled("write-sidecar", busy || !work || !project || !hasWorkStateContent(work));
   setDisabled("apply-transcript", busy || !work?.transcript || !project);
   setDisabled("bundle-file", busy);
+  for (const button of document.querySelectorAll("#summary-editor button")) {
+    if (button instanceof HTMLButtonElement) button.disabled = busy;
+  }
   const phase = state.repair?.phase;
   setDisabled("repair-input", busy || !state.repair || phase === "done");
   setDisabled("repair-send", busy || !state.repair || phase === "done");

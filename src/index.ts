@@ -7,6 +7,7 @@ import { runConvert } from "./commands/convert.js";
 import { runTranscriptExport, runTranscriptImport } from "./commands/transcript.js";
 import { transcriptLimits } from "./commands/flags.js";
 import { runWeb } from "./commands/web.js";
+import { runSummarize } from "./commands/summarize.js";
 import { listAdapters } from "./adapters/index.js";
 
 const program = new Command();
@@ -157,9 +158,45 @@ transcript
     });
   });
 
+function collect(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
+
+program
+  .command("summarize")
+  .description("Fill Work State from a Cursor session, notes, or a plaintext export (lossy)")
+  .option("-p, --project <dir>", "Project root", ".")
+  .option("-a, --agent <id>", "cursor, trae, or both", "both")
+  .option("-o, --out <file>", "Bundle path to create or update")
+  .option("--stdout", "Print the bundle JSON to stdout", false)
+  .option("--dry-run", "Print Work State and losses without writing", false)
+  .option("--session <id>", "Cursor session id")
+  .option("--transcript <path>", "Plaintext transcript (json, jsonl, or text). Repeatable.", collect, [] as string[])
+  .option("--notes <path>", "Notes file. Markdown headings win over heuristics.")
+  .option("--cursor-home <dir>", "Override ~/.cursor")
+  .option("--home <dir>", "Override the home directory used to detect a Trae chat database")
+  .option("--max-sessions <n>", "How many recent Cursor sessions to read", "1")
+  .option("--write-sidecar", "Also write <project>/.acb/WORK_STATE.md", false)
+  .action(async (opts) => {
+    process.exitCode = await runSummarize({
+      project: opts.project,
+      agent: opts.agent,
+      out: opts.out,
+      stdout: opts.stdout,
+      dryRun: opts.dryRun,
+      session: opts.session,
+      transcript: opts.transcript,
+      notes: opts.notes,
+      cursorHome: opts.cursorHome,
+      home: opts.home,
+      maxSessions: opts.maxSessions,
+      writeSidecar: opts.writeSidecar,
+    });
+  });
+
 program
   .command("web")
-  .description("Start the local web UI (export, import, convert, guided repair)")
+  .description("Start the local web UI (export, import, convert, summarize, guided repair)")
   .option("-p, --port <n>", "Port", "4173")
   .option("--host <host>", "Bind address (default 127.0.0.1)", "127.0.0.1")
   .option("--dev", "Serve the Vite dev middleware instead of web/dist", false)

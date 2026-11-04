@@ -723,7 +723,9 @@ export async function exportAgent(
   losses.push(
     loss(
       "work_state.not_inferred",
-      "Work State is not inferred from the session. The bundle ships an empty work_state until you fill it or confirm a repair.",
+      layout.id === "trae"
+        ? "Export leaves work_state empty. Run `acb summarize` to fill it from notes or a plaintext export. Trae chat databases are not decrypted."
+        : "Export leaves work_state empty. Run `acb summarize` to fill it from a Cursor session or notes.",
       "info",
     ),
   );
