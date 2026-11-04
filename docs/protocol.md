@@ -9,7 +9,7 @@
 机器可读 schema：[`../schemas/agent-work-bundle.v0.1.schema.json`](../schemas/agent-work-bundle.v0.1.schema.json)  
 运行时校验：Zod（`src/protocol/schema.ts`）
 
-> 与 [AgentMove](https://github.com/wookat/agentmove) 的差异：AgentMove 侧重多客户端 **配置/MCP/skills** 搬家；本协议额外把 **Work State** 与诚实的 **loss_report** 作为一等公民，对话层明确标为有损。
+Work State 与诚实的 `loss_report` 是一等字段。对话层明确标为有损：能读的明文会搬进来，加密库与聊天界面不写。
 
 ---
 
@@ -82,7 +82,8 @@
 | `name` | 相对 rules 目录的文件名（可含子路径） |
 | `content` | 含 frontmatter 的原文 |
 | `always_apply` / `description` / `globs` | 从 frontmatter 归一化抽出（可选） |
-| `source_path` | 导出时相对项目根的路径 |
+| `source_path` | 导出时相对项目根的路径。用户级为 `user:.cursor/...` 或 `user:.trae/...` |
+| `scope` | 可选 `project`（默认）或 `user`。`user` 只在 `--include-user` 时写回家目录 |
 
 ### SkillEntry
 
@@ -90,13 +91,14 @@
 |------|------|
 | `name` | skill 目录名 |
 | `skill_md` | `SKILL.md` 全文 |
-| `extras` | 同目录其他文本文件（relpath → content）；二进制 v0.1 不收录 |
+| `extras` | 同目录其他文本文件（relpath → content）；二进制不收录，并记入 `loss_report` |
+| `scope` | 与规则相同：`project` 或 `user` |
 
 ### McpServerEntry
 
-`config` 便携字段：`command` / `args` / `env` / `url` / `headers`。其它键可透传，但目标端可能丢弃并记入 `loss_report`。
+`config` 便携字段：`command` / `args` / `env` / `url` / `headers`。其它键可透传，但目标端可能丢弃并记入 `loss_report`。`scope` 与规则相同。
 
-**安全**：v0.1 **不**自动脱敏 `env`；后续版本应支持 redaction。切勿把含密钥的 bundle 提交到公开仓库。
+**安全**：用户级 MCP 的 `env` 与 headers 导出时写成 `${REDACTED}`，并记入 `loss_report`。项目级 `env` 原样保留，同时记一条警告。切勿把含密钥的 bundle 提交到公开仓库。
 
 ---
 
@@ -126,7 +128,9 @@ Markdown companion：导入时若目标端无原生 Work State，适配器写入
 | `source_session_id` | 来源会话 id |
 | `notes` | 有损说明 |
 
-`dropped_fields` 列出本条消息丢掉的字段名（如 `tool_calls[0].result`）。附件默认 `omitted: true`，不内嵌二进制。
+`dropped_fields` 列出本条消息丢掉的字段名（如 `tool_calls.read_file.result`）。附件默认 `omitted: true`，不内嵌二进制。
+
+CLI 与 Web 可以读 Cursor JSONL 或 Trae 明文导出。默认不把 transcript 写进项目；确认之后只生成 `.acb/TRANSCRIPT.md`。体积上限默认 1.5 MB 或 400 条消息，超出记 `transcript.truncated`。
 
 ---
 

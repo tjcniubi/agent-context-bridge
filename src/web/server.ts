@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { listAdapters } from "../adapters/index.js";
 import { UserInputError } from "../core/errors.js";
 import {
+  applyTranscriptFile,
   convertProject,
   exportProject,
   importProject,
@@ -190,6 +191,10 @@ async function handleApi(
       project,
       includeUser: bool(body, "includeUser"),
       sessionId: optionalString(body, "sessionId"),
+      includeTranscript: bool(body, "includeTranscript"),
+      transcriptMaxBytes: optionalInt(body, "transcriptMaxBytes"),
+      transcriptMaxMessages: optionalInt(body, "transcriptMaxMessages"),
+      allowExternalTranscriptFile: false,
     });
     sendJson(res, 200, {
       bundle: result.bundle,
@@ -208,12 +213,14 @@ async function handleApi(
       project,
       bundle: body.bundle,
       dryRun: bool(body, "dryRun"),
+      includeUser: bool(body, "includeUser"),
     });
     const bundle = withLosses(result.bundle, result.losses);
     sendJson(res, 200, {
       bundle,
       losses: result.losses,
       written: result.written,
+      changes: result.changes,
       dryRun: bool(body, "dryRun"),
       summary: summarize(bundle, result.losses),
     });
@@ -230,6 +237,11 @@ async function handleApi(
       project,
       dryRun: bool(body, "dryRun"),
       includeUser: bool(body, "includeUser"),
+      includeTranscript: bool(body, "includeTranscript"),
+      sessionId: optionalString(body, "sessionId"),
+      transcriptMaxBytes: optionalInt(body, "transcriptMaxBytes"),
+      transcriptMaxMessages: optionalInt(body, "transcriptMaxMessages"),
+      allowExternalTranscriptFile: false,
       persistBundle: false,
     });
     const bundle = withLosses(result.bundle, result.importLosses);
@@ -238,6 +250,7 @@ async function handleApi(
       losses: result.importLosses,
       exportLosses: result.exportLosses,
       written: result.written,
+      changes: result.changes,
       dryRun: bool(body, "dryRun"),
       summary: summarize(bundle, result.importLosses),
     });
@@ -257,6 +270,22 @@ async function handleApi(
       losses: check.bundle!.manifest.loss_report,
       summary: summarize(check.bundle!, check.bundle!.manifest.loss_report),
     });
+    return true;
+  }
+
+  if (method === "POST" && path === "/api/transcript/apply") {
+    const body = await readJson(req);
+    if (body.confirm !== true) {
+      throw new UserInputError("写入 transcript 需要 confirm: true。未确认不会写文件。");
+    }
+    const project = requireString(body, "project");
+    await assertDirectory(project);
+    const result = await applyTranscriptFile({
+      project,
+      bundle: body.bundle,
+      dryRun: bool(body, "dryRun"),
+    });
+    sendJson(res, 200, result);
     return true;
   }
 
@@ -392,6 +421,7 @@ function summarize(bundle: AgentWorkBundle, losses: LossReportEntry[]) {
     rules: bundle.repo_context.rules.length,
     skills: bundle.repo_context.skills.length,
     mcp: bundle.repo_context.mcp_servers.length,
+    transcript: bundle.transcript?.messages.length ?? 0,
     lossCount: losses.length,
   };
 }
@@ -422,6 +452,15 @@ function optionalString(body: JsonRecord, key: string): string | undefined {
 
 function bool(body: JsonRecord, key: string): boolean {
   return body[key] === true;
+}
+
+function optionalInt(body: JsonRecord, key: string): number | undefined {
+  const value = body[key];
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new UserInputError(`${key} 必须是正整数。`);
+  }
+  return value;
 }
 
 async function readJson(req: IncomingMessage): Promise<JsonRecord> {

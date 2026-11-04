@@ -13,6 +13,11 @@ export interface ConvertCliOptions {
   outBundle?: string;
   dryRun?: boolean;
   includeUser?: boolean;
+  includeTranscript?: boolean;
+  session?: string;
+  transcriptMaxBytes?: number;
+  transcriptMaxMessages?: number;
+  applyTranscript?: boolean;
 }
 
 /**
@@ -35,6 +40,10 @@ export async function runConvert(opts: ConvertCliOptions): Promise<number> {
     project: opts.project,
     out: bundlePath,
     includeUser: opts.includeUser,
+    includeTranscript: opts.includeTranscript,
+    session: opts.session,
+    transcriptMaxBytes: opts.transcriptMaxBytes,
+    transcriptMaxMessages: opts.transcriptMaxMessages,
   });
   if (exportCode !== 0) return exportCode;
 
@@ -43,6 +52,8 @@ export async function runConvert(opts: ConvertCliOptions): Promise<number> {
     project: opts.project,
     file: bundlePath,
     dryRun: opts.dryRun,
+    includeUser: opts.includeUser,
+    applyTranscript: opts.applyTranscript,
   });
   if (importCode !== 0) return importCode;
 

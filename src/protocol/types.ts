@@ -26,6 +26,8 @@ export interface BundleManifest {
   loss_report: LossReportEntry[];
 }
 
+export type ContextScope = "project" | "user";
+
 export interface RuleEntry {
   /** Relative path within the agent rules dir, e.g. "react-patterns.mdc" */
   name: string;
@@ -35,8 +37,10 @@ export interface RuleEntry {
   always_apply?: boolean;
   description?: string;
   globs?: string[];
-  /** Original relative path from project root */
+  /** Original relative path from project root, or `user:.cursor/rules/...` */
   source_path?: string;
+  /** project (default) or user-home. User entries are written only with --include-user */
+  scope?: ContextScope;
 }
 
 export interface SkillEntry {
@@ -47,6 +51,7 @@ export interface SkillEntry {
   source_path?: string;
   /** extra files under the skill dir: relpath -> content (text only in v0.1) */
   extras?: Record<string, string>;
+  scope?: ContextScope;
 }
 
 export interface McpServerEntry {
@@ -61,13 +66,15 @@ export interface McpServerEntry {
     [key: string]: unknown;
   };
   source_path?: string;
+  scope?: ContextScope;
 }
 
 export interface InstructionsFile {
-  /** e.g. AGENTS.md, CLAUDE.md */
+  /** e.g. AGENTS.md, CLAUDE.md, or a nested relative path */
   name: string;
   content: string;
   source_path?: string;
+  scope?: ContextScope;
 }
 
 export interface RepoContext {

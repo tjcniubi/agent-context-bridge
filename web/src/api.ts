@@ -19,7 +19,13 @@ export interface Summary {
   rules: number;
   skills: number;
   mcp: number;
+  transcript: number;
   lossCount: number;
+}
+
+export interface FileChange {
+  path: string;
+  action: "create" | "update" | "unchanged";
 }
 
 export interface BundleResponse {
@@ -27,6 +33,7 @@ export interface BundleResponse {
   losses: LossReportEntry[];
   summary: Summary;
   written?: string[];
+  changes?: FileChange[];
   dryRun?: boolean;
   exportLosses?: LossReportEntry[];
 }
