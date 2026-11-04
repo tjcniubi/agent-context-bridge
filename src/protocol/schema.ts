@@ -27,6 +27,7 @@ export const RuleEntrySchema = z.object({
   description: z.string().optional(),
   globs: z.array(z.string()).optional(),
   source_path: z.string().optional(),
+  scope: z.enum(["project", "user"]).optional(),
 });
 
 export const SkillEntrySchema = z.object({
@@ -34,6 +35,7 @@ export const SkillEntrySchema = z.object({
   skill_md: z.string(),
   source_path: z.string().optional(),
   extras: z.record(z.string()).optional(),
+  scope: z.enum(["project", "user"]).optional(),
 });
 
 export const McpServerEntrySchema = z.object({
@@ -48,12 +50,14 @@ export const McpServerEntrySchema = z.object({
     })
     .passthrough(),
   source_path: z.string().optional(),
+  scope: z.enum(["project", "user"]).optional(),
 });
 
 export const InstructionsFileSchema = z.object({
   name: z.string().min(1),
   content: z.string(),
   source_path: z.string().optional(),
+  scope: z.enum(["project", "user"]).optional(),
 });
 
 export const RepoContextSchema = z.object({

@@ -18,19 +18,43 @@ export interface AdapterPaths {
   };
 }
 
+export interface FileChange {
+  /** Project-relative path, or `~/...` for user-home writes */
+  path: string;
+  action: "create" | "update" | "unchanged";
+}
+
 export interface ExportOptions {
   projectRoot: string;
-  /** Include user-global configs when true (default false for project-first MVP) */
+  /** Include user-global configs when true (default false) */
   includeUser?: boolean;
-  /** Layer 3: optional session id for transcript export (stub) */
+  /** Session id, or a path to a plaintext transcript export */
   sessionId?: string;
+  /** Read a lossy transcript when true. `--session` implies this. */
+  includeTranscript?: boolean;
+  transcriptMaxBytes?: number;
+  transcriptMaxMessages?: number;
+  /**
+   * Home directory used for user-scope files and Cursor transcripts.
+   * Defaults to os.homedir(). Tests pass a temp directory.
+   */
+  userHome?: string;
+  /**
+   * When false, a session path outside the project is refused.
+   * CLI defaults to true; the local web API sets false.
+   */
+  allowExternalTranscriptFile?: boolean;
 }
 
 export interface ImportOptions {
   projectRoot: string;
   /** Dry-run: do not write files */
   dryRun?: boolean;
+  /** Write user-scoped bundle entries under the home directory */
   includeUser?: boolean;
+  /** Write `.acb/TRANSCRIPT.md`. Never injects a chat UI or encrypted DB. */
+  applyTranscript?: boolean;
+  userHome?: string;
 }
 
 export interface AgentAdapter {
@@ -44,5 +68,5 @@ export interface AgentAdapter {
   importRepoContext(
     bundle: AgentWorkBundle,
     opts: ImportOptions,
-  ): Promise<{ written: string[]; losses: LossReportEntry[] }>;
+  ): Promise<{ written: string[]; losses: LossReportEntry[]; changes: FileChange[] }>;
 }

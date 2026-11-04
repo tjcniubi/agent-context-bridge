@@ -112,7 +112,8 @@
         "always_apply": { "type": "boolean" },
         "description": { "type": "string" },
         "globs": { "type": "array", "items": { "type": "string" } },
-        "source_path": { "type": "string" }
+        "source_path": { "type": "string" },
+        "scope": { "enum": ["project", "user"] }
       }
     },
     "skill_entry": {
@@ -126,7 +127,8 @@
         "extras": {
           "type": "object",
           "additionalProperties": { "type": "string" }
-        }
+        },
+        "scope": { "enum": ["project", "user"] }
       }
     },
     "mcp_server_entry": {
@@ -152,7 +154,8 @@
           },
           "additionalProperties": true
         },
-        "source_path": { "type": "string" }
+        "source_path": { "type": "string" },
+        "scope": { "enum": ["project", "user"] }
       }
     },
     "instructions_file": {
@@ -162,7 +165,8 @@
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "content": { "type": "string" },
-        "source_path": { "type": "string" }
+        "source_path": { "type": "string" },
+        "scope": { "enum": ["project", "user"] }
       }
     },
     "decision": {

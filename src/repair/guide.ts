@@ -135,6 +135,12 @@ function guideHint(code: string): string {
   if (code.startsWith("transcript.")) {
     return "对话没有进入目标端的聊天界面。请把必须记住的结论写成摘要；工具结果里的关键事实也写在这里。";
   }
+  if (code.includes("other_layout") || code.includes("agents_dir_mapped")) {
+    return "这些文件已经收进 bundle，只是目录布局和来源端不一样。不需要补记就回复「跳过」。";
+  }
+  if (code.includes("mcp.env") || code.includes("mcp.headers")) {
+    return "MCP 的 env 或 headers 被保留或脱敏了。需要记住的约束写下来；否则回复「跳过」。";
+  }
   if (code.includes("user_scope")) {
     return "用户级配置这次没有读全。哪些规则或服务需要稍后手工补上？";
   }

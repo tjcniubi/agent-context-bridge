@@ -10,6 +10,9 @@ export interface ExportCliOptions {
   out: string;
   includeUser?: boolean;
   session?: string;
+  includeTranscript?: boolean;
+  transcriptMaxBytes?: number;
+  transcriptMaxMessages?: number;
 }
 
 export async function runExport(opts: ExportCliOptions): Promise<number> {
@@ -20,12 +23,16 @@ export async function runExport(opts: ExportCliOptions): Promise<number> {
       project: opts.project,
       includeUser: opts.includeUser,
       sessionId: opts.session,
+      includeTranscript: opts.includeTranscript,
+      transcriptMaxBytes: opts.transcriptMaxBytes,
+      transcriptMaxMessages: opts.transcriptMaxMessages,
+      allowExternalTranscriptFile: true,
     });
 
     await writeText(opts.out, JSON.stringify(bundle, null, 2) + "\n");
     console.log(`Exported ${adapter.displayName} → ${opts.out}`);
     console.log(
-      `  rules=${bundle.repo_context.rules.length} skills=${bundle.repo_context.skills.length} mcp=${bundle.repo_context.mcp_servers.length}`,
+      `  rules=${bundle.repo_context.rules.length} skills=${bundle.repo_context.skills.length} mcp=${bundle.repo_context.mcp_servers.length} transcript=${bundle.transcript?.messages.length ?? 0}`,
     );
     console.log("Loss report:");
     console.log(formatLossReport(losses));

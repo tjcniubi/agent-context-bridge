@@ -6,16 +6,27 @@ import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { getAdapter } from "../adapters/index.js";
+import { TranscriptSchema } from "../protocol/schema.js";
 import { validateBundle } from "../protocol/validate.js";
-import type { AgentWorkBundle, LossReportEntry } from "../protocol/types.js";
+import type { AgentWorkBundle, LossReportEntry, Transcript } from "../protocol/types.js";
+import { TRANSCRIPT_SIDECAR } from "../transcript/limits.js";
+import { previewTranscriptText, renderTranscriptMarkdown } from "../transcript/render.js";
 import { writeText } from "../utils/fs.js";
+import { resolveInside } from "../utils/path-safety.js";
 import { UserInputError } from "./errors.js";
+import type { FileChange } from "../adapters/types.js";
 
 export interface ExportRequest {
   agent: string;
   project: string;
   includeUser?: boolean;
   sessionId?: string;
+  includeTranscript?: boolean;
+  transcriptMaxBytes?: number;
+  transcriptMaxMessages?: number;
+  /** Library/tests only. The HTTP API does not accept this. */
+  userHome?: string;
+  allowExternalTranscriptFile?: boolean;
 }
 
 export interface ExportResult {
@@ -30,6 +41,11 @@ export async function exportProject(opts: ExportRequest): Promise<ExportResult> 
     projectRoot,
     includeUser: opts.includeUser,
     sessionId: opts.sessionId,
+    includeTranscript: opts.includeTranscript,
+    transcriptMaxBytes: opts.transcriptMaxBytes,
+    transcriptMaxMessages: opts.transcriptMaxMessages,
+    userHome: opts.userHome,
+    allowExternalTranscriptFile: opts.allowExternalTranscriptFile,
   });
 
   const check = validateBundle(bundle);
@@ -48,12 +64,17 @@ export interface ImportRequest {
   project: string;
   bundle: unknown;
   dryRun?: boolean;
+  includeUser?: boolean;
+  applyTranscript?: boolean;
+  /** Library/tests only. The HTTP API does not accept this. */
+  userHome?: string;
 }
 
 export interface ImportResult {
   bundle: AgentWorkBundle;
   written: string[];
   losses: LossReportEntry[];
+  changes: FileChange[];
 }
 
 export async function importProject(opts: ImportRequest): Promise<ImportResult> {
@@ -65,12 +86,15 @@ export async function importProject(opts: ImportRequest): Promise<ImportResult> 
   const bundle = check.bundle as AgentWorkBundle;
   bundle.manifest.target_agent = adapter.id;
 
-  const { written, losses } = await adapter.importRepoContext(bundle, {
+  const { written, losses, changes } = await adapter.importRepoContext(bundle, {
     projectRoot: resolve(opts.project),
     dryRun: opts.dryRun,
+    includeUser: opts.includeUser,
+    applyTranscript: opts.applyTranscript,
+    userHome: opts.userHome,
   });
 
-  return { bundle, written, losses };
+  return { bundle, written, losses, changes };
 }
 
 export async function readBundleFile(file: string): Promise<unknown> {
@@ -96,14 +120,22 @@ export interface ConvertRequest {
   outBundle?: string;
   dryRun?: boolean;
   includeUser?: boolean;
+  includeTranscript?: boolean;
+  sessionId?: string;
+  transcriptMaxBytes?: number;
+  transcriptMaxMessages?: number;
+  applyTranscript?: boolean;
   /** Write the intermediate bundle. CLI passes true. Web can skip the temp file. */
   persistBundle?: boolean;
+  userHome?: string;
+  allowExternalTranscriptFile?: boolean;
 }
 
 export interface ConvertResult {
   bundle: AgentWorkBundle;
   bundlePath?: string;
   written: string[];
+  changes: FileChange[];
   exportLosses: LossReportEntry[];
   importLosses: LossReportEntry[];
 }
@@ -116,6 +148,12 @@ export async function convertProject(opts: ConvertRequest): Promise<ConvertResul
     agent: opts.from,
     project: opts.project,
     includeUser: opts.includeUser,
+    includeTranscript: opts.includeTranscript,
+    sessionId: opts.sessionId,
+    transcriptMaxBytes: opts.transcriptMaxBytes,
+    transcriptMaxMessages: opts.transcriptMaxMessages,
+    userHome: opts.userHome,
+    allowExternalTranscriptFile: opts.allowExternalTranscriptFile,
   });
 
   let bundlePath: string | undefined;
@@ -134,13 +172,92 @@ export async function convertProject(opts: ConvertRequest): Promise<ConvertResul
     project: opts.project,
     bundle: structuredClone(exported.bundle),
     dryRun: opts.dryRun,
+    includeUser: opts.includeUser,
+    applyTranscript: opts.applyTranscript,
+    userHome: opts.userHome,
   });
 
   return {
     bundle: imported.bundle,
     bundlePath,
     written: imported.written,
+    changes: imported.changes,
     exportLosses: exported.losses,
     importLosses: imported.losses,
+  };
+}
+
+export function coerceTranscript(data: unknown): Transcript {
+  if (data && typeof data === "object" && "messages" in data && !("manifest" in data)) {
+    const parsed = TranscriptSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new UserInputError(
+        "Transcript JSON failed validation:",
+        parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`),
+      );
+    }
+    return parsed.data as Transcript;
+  }
+  const check = validateBundle(data);
+  if (!check.ok || !check.bundle) {
+    throw new UserInputError("Bundle failed validation:", check.errors);
+  }
+  if (!check.bundle.transcript) {
+    throw new UserInputError("Bundle 里没有 transcript。");
+  }
+  return check.bundle.transcript;
+}
+
+export interface TranscriptApplyResult {
+  written: string[];
+  changes: FileChange[];
+  losses: LossReportEntry[];
+  preview: string;
+  transcript: Transcript;
+}
+
+/** Write `.acb/TRANSCRIPT.md` only. Does not touch chat UI or encrypted stores. */
+export async function applyTranscriptFile(opts: {
+  project: string;
+  bundle: unknown;
+  dryRun?: boolean;
+}): Promise<TranscriptApplyResult> {
+  const transcript = coerceTranscript(opts.bundle);
+  const projectRoot = resolve(opts.project);
+  const abs = await resolveInside(projectRoot, TRANSCRIPT_SIDECAR);
+  if (!abs) {
+    throw new UserInputError("拒绝把 transcript 写到项目目录之外。");
+  }
+  const content = renderTranscriptMarkdown(transcript);
+  let existing: string | undefined;
+  try {
+    existing = await readFile(abs, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+  const action: FileChange["action"] =
+    existing === undefined ? "create" : existing === content ? "unchanged" : "update";
+  if (!opts.dryRun && action !== "unchanged") await writeText(abs, content);
+  const losses = [
+    {
+      code: "transcript.sidecar",
+      message: opts.dryRun
+        ? "Dry-run: would write .acb/TRANSCRIPT.md. Chat UI was not modified."
+        : "Wrote a lossy transcript sidecar. Chat UI was not modified.",
+      severity: "info" as const,
+      path: TRANSCRIPT_SIDECAR,
+    },
+    {
+      code: "transcript.ui_not_injected",
+      message: "Refused to inject the transcript into the agent chat store or any encrypted database.",
+      severity: "info" as const,
+    },
+  ];
+  return {
+    written: [TRANSCRIPT_SIDECAR],
+    changes: [{ path: TRANSCRIPT_SIDECAR, action }],
+    losses,
+    preview: previewTranscriptText(transcript),
+    transcript,
   };
 }

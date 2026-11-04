@@ -1,6 +1,6 @@
 import type { AgentWorkBundle, LossReportEntry } from "../../src/protocol/types.ts";
 import { hasWorkStateContent, renderWorkStateMarkdown } from "../../src/protocol/work-state-markdown.ts";
-import { api, type AdapterInfo, type BundleResponse, type RepairSessionView } from "./api.ts";
+import { api, type AdapterInfo, type BundleResponse, type FileChange, type RepairSessionView } from "./api.ts";
 import {
   armFileInput,
   fingerprintFromFiles,
@@ -23,6 +23,7 @@ interface AppState {
   bundle: AgentWorkBundle | null;
   losses: LossReportEntry[];
   written: string[];
+  changes: FileChange[];
   dryRun: boolean;
   repair: RepairSessionView | null;
   dir: DirListing | null;
@@ -35,6 +36,7 @@ const state: AppState = {
   bundle: null,
   losses: [],
   written: [],
+  changes: [],
   dryRun: false,
   repair: null,
   dir: null,
@@ -56,7 +58,7 @@ app.innerHTML = `
           <h1>Agent Context Bridge</h1>
         </div>
       </div>
-      <p class="lede">在本机把项目或 bundle 在 Cursor 与 Trae 之间导出、导入、转换。可以用系统文件夹和文件选择器指定路径。会话摘要先出预览，确认之后才写入 Work State。</p>
+      <p class="lede">在本机把项目或 bundle 在 Cursor 与 Trae 之间导出、导入、转换。可以用系统文件夹和文件选择器指定路径。会话摘要和有损 transcript 都先出预览，确认之后才写入。</p>
     </header>
     <div id="error" class="banner error" hidden></div>
     <div class="layout">
@@ -83,10 +85,11 @@ app.innerHTML = `
           </div>
           <div class="checks">
             <label><input id="dry-run" type="checkbox" /> 预演导入，不写项目文件</label>
-            <label><input id="include-user" type="checkbox" /> 记录用户级配置缺口</label>
+            <label><input id="include-user" type="checkbox" /> 包含用户级配置（用户 MCP env 会脱敏）</label>
+            <label><input id="include-transcript" type="checkbox" /> 包含有损 transcript（不解密本地库）</label>
           </div>
-          <label>会话 id（可选，用来标出 transcript 损失）
-            <input id="session-id" type="text" placeholder="session id" />
+          <label>会话 id，或项目内的明文导出路径（可选）
+            <input id="session-id" type="text" placeholder="session id 或 .acb/imports/transcript.md" />
           </label>
           <div class="actions">
             <button id="export" type="button">导出</button>
@@ -108,6 +111,12 @@ app.innerHTML = `
         <ul id="losses" class="losses"></ul>
         <h3>写出的路径</h3>
         <ul id="written" class="written"></ul>
+        <h3>transcript</h3>
+        <p id="transcript-note" class="meta"></p>
+        <div id="transcript" class="transcript"></div>
+        <div class="actions">
+          <button id="apply-transcript" class="secondary" type="button">确认写入 .acb/TRANSCRIPT.md</button>
+        </div>
         <div class="actions">
           <button id="download" class="secondary" type="button">下载 bundle</button>
           <button id="start-repair" type="button">开始逐条修复</button>
@@ -241,6 +250,7 @@ function bind(): void {
   el<HTMLButtonElement>("download").addEventListener("click", () => downloadActive());
   el<HTMLButtonElement>("start-repair").addEventListener("click", () => void run(() => doStartRepair()));
   el<HTMLButtonElement>("write-sidecar").addEventListener("click", () => void run(() => doWriteSidecar()));
+  el<HTMLButtonElement>("apply-transcript").addEventListener("click", () => void run(() => doApplyTranscript()));
   el<HTMLFormElement>("repair-form").addEventListener("submit", (event) => {
     event.preventDefault();
     void run(() => doAnswer());
@@ -292,6 +302,7 @@ async function doExport(): Promise<void> {
       agent: value("from-agent"),
       project: requireProject(),
       includeUser: checked("include-user"),
+      includeTranscript: checked("include-transcript"),
       sessionId: value("session-id"),
     },
   });
@@ -307,6 +318,8 @@ async function doConvert(): Promise<void> {
       project: requireProject(),
       dryRun: checked("dry-run"),
       includeUser: checked("include-user"),
+      includeTranscript: checked("include-transcript"),
+      sessionId: value("session-id"),
     },
   });
   adopt(result, result.dryRun ? "转换已预演，项目文件没有改动。" : "转换完成。");
@@ -321,6 +334,7 @@ async function doImport(): Promise<void> {
       project: requireProject(),
       bundle: state.bundle,
       dryRun: checked("dry-run"),
+      includeUser: checked("include-user"),
     },
   });
   adopt(result, result.dryRun ? "导入已预演，项目文件没有改动。" : "导入完成。");
@@ -526,10 +540,32 @@ async function doWriteSidecar(): Promise<void> {
   state.note = `已写入 ${result.written}`;
 }
 
+async function doApplyTranscript(): Promise<void> {
+  const bundle = activeBundle();
+  if (!bundle.transcript) throw new Error("当前 bundle 没有 transcript。");
+  const project = requireProject();
+  const dryRun = checked("dry-run");
+  const ok = window.confirm(
+    dryRun
+      ? `预演写入\n${project}/.acb/TRANSCRIPT.md ？\n不会改聊天界面。`
+      : `把有损 transcript 写到\n${project}/.acb/TRANSCRIPT.md ？\n不会写入聊天界面，也不会解密本地库。`,
+  );
+  if (!ok) return;
+  const result = await api<{ written: string[]; changes: FileChange[]; preview: string }>("/api/transcript/apply", {
+    method: "POST",
+    body: { project, bundle, confirm: true, dryRun },
+  });
+  state.written = result.written;
+  state.changes = result.changes;
+  state.dryRun = dryRun;
+  state.note = dryRun ? "transcript 预演完成，没有写文件。" : "已写入 .acb/TRANSCRIPT.md。聊天界面没有改动。";
+}
+
 function adopt(result: BundleResponse, note: string): void {
   state.bundle = result.bundle;
   state.losses = result.losses;
   state.written = result.written ?? [];
+  state.changes = result.changes ?? [];
   state.dryRun = result.dryRun === true;
   state.repair = null;
   summaryDraft = null;
@@ -560,6 +596,7 @@ function render(): void {
   renderStats();
   renderLosses();
   renderWritten();
+  renderTranscript();
   renderSecret();
   renderRepair();
   syncControls();
@@ -574,12 +611,14 @@ function renderStats(): void {
         [String(bundle.repo_context.rules.length), "rules"],
         [String(bundle.repo_context.skills.length), "skills"],
         [String(bundle.repo_context.mcp_servers.length), "MCP"],
+        [String(bundle.transcript?.messages.length ?? 0), "transcript"],
         [String(state.losses.length), "损失"],
       ]
     : [
         ["—", "rules"],
         ["—", "skills"],
         ["—", "MCP"],
+        ["—", "transcript"],
         ["—", "损失"],
       ];
   for (const [value, label] of items) {
@@ -622,8 +661,17 @@ function renderLosses(): void {
 function renderWritten(): void {
   const list = el<HTMLElement>("written");
   list.replaceChildren();
-  if (state.written.length === 0) {
+  if (state.changes.length === 0 && state.written.length === 0) {
     list.append(emptyLine(state.dryRun ? "预演没有写文件。" : "还没有写出路径。"));
+    return;
+  }
+  if (state.changes.length > 0) {
+    for (const change of state.changes) {
+      const item = document.createElement("li");
+      item.className = "mono";
+      item.textContent = `${change.action} ${change.path}`;
+      list.append(item);
+    }
     return;
   }
   for (const path of state.written) {
@@ -631,6 +679,44 @@ function renderWritten(): void {
     item.className = "mono";
     item.textContent = path;
     list.append(item);
+  }
+}
+
+function renderTranscript(): void {
+  const note = el<HTMLElement>("transcript-note");
+  const box = el<HTMLElement>("transcript");
+  box.replaceChildren();
+  const transcript = (state.repair?.bundle ?? state.bundle)?.transcript;
+  if (!transcript) {
+    note.textContent = "没有 transcript。勾选「包含有损 transcript」后再导出，或上传一份带 transcript 的 bundle。";
+    return;
+  }
+  note.textContent = `${transcript.messages.length} 条${transcript.source_session_id ? ` · ${transcript.source_session_id}` : ""}${transcript.notes ? ` · ${transcript.notes}` : ""}`;
+  const shown = transcript.messages.slice(0, 40);
+  for (const [index, message] of shown.entries()) {
+    const item = document.createElement("article");
+    item.className = "t-msg";
+    const header = document.createElement("header");
+    const role = document.createElement("strong");
+    role.textContent = `${index + 1}. ${message.role}`;
+    header.append(role);
+    if (message.dropped_fields?.length) {
+      const dropped = document.createElement("span");
+      dropped.className = "meta";
+      dropped.textContent = message.dropped_fields.join(", ");
+      header.append(dropped);
+    }
+    const body = document.createElement("p");
+    const text = message.content.trim() || "（空）";
+    body.textContent = text.length > 600 ? `${text.slice(0, 600)}…` : text;
+    item.append(header, body);
+    box.append(item);
+  }
+  if (transcript.messages.length > shown.length) {
+    const more = document.createElement("p");
+    more.className = "meta";
+    more.textContent = `还有 ${transcript.messages.length - shown.length} 条未展开。`;
+    box.append(more);
   }
 }
 
@@ -831,6 +917,8 @@ function syncControls(): void {
   setDisabled("download", busy || !hasBundle);
   setDisabled("start-repair", busy || !hasBundle);
   setDisabled("write-sidecar", busy || !work || !project || !hasWorkStateContent(work));
+  setDisabled("apply-transcript", busy || !work?.transcript || !project);
+  setDisabled("bundle-file", busy);
   for (const button of document.querySelectorAll("#summary-editor button")) {
     if (button instanceof HTMLButtonElement) button.disabled = busy;
   }

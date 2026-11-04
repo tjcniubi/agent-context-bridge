@@ -1,6 +1,7 @@
 import {
   access,
   mkdir,
+  open,
   readFile,
   readdir,
   writeFile,
@@ -29,6 +30,32 @@ export async function writeText(path: string, content: string): Promise<void> {
 export async function readTextIfExists(path: string): Promise<string | undefined> {
   if (!(await exists(path))) return undefined;
   return readFile(path, "utf8");
+}
+
+/** Read at most `maxBytes` of a regular file. Missing files return undefined. */
+export async function readTextCapped(
+  path: string,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean; bytes: number } | undefined> {
+  let size: number;
+  try {
+    const info = await stat(path);
+    if (!info.isFile()) return undefined;
+    size = info.size;
+  } catch {
+    return undefined;
+  }
+  if (size <= maxBytes) {
+    return { text: await readFile(path, "utf8"), truncated: false, bytes: size };
+  }
+  const handle = await open(path, "r");
+  try {
+    const buf = Buffer.alloc(maxBytes);
+    await handle.read(buf, 0, maxBytes, 0);
+    return { text: buf.toString("utf8"), truncated: true, bytes: size };
+  } finally {
+    await handle.close();
+  }
 }
 
 export async function readJsonIfExists<T = unknown>(

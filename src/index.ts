@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runValidate } from "./commands/validate.js";
-import { runExport } from "./commands/export.js";
+import { reportUserError, runExport } from "./commands/export.js";
 import { runImport } from "./commands/import.js";
 import { runConvert } from "./commands/convert.js";
+import { runTranscriptExport, runTranscriptImport } from "./commands/transcript.js";
+import { transcriptLimits } from "./commands/flags.js";
 import { runWeb } from "./commands/web.js";
 import { runSummarize } from "./commands/summarize.js";
 import { listAdapters } from "./adapters/index.js";
@@ -31,16 +33,28 @@ program
   .requiredOption("-a, --agent <id>", "Source agent id (cursor|trae)")
   .option("-p, --project <dir>", "Project root", ".")
   .requiredOption("-o, --out <file>", "Output bundle path")
-  .option("--include-user", "Also attempt user-global configs", false)
-  .option("--session <id>", "Optional session id for Layer 3 transcript (stub)")
+  .option("--include-user", "Also read user-global configs (user MCP env is redacted)", false)
+  .option("--include-transcript", "Read a lossy transcript when one is safely available", false)
+  .option("--with-transcript", "Alias of --include-transcript", false)
+  .option("--session <id>", "Session id or path to a plaintext transcript export")
+  .option("--transcript-max-bytes <n>", "Cap transcript payload bytes (default 1500000)")
+  .option("--transcript-max-messages <n>", "Cap transcript messages (default 400)")
   .action(async (opts) => {
-    process.exitCode = await runExport({
-      agent: opts.agent,
-      project: opts.project,
-      out: opts.out,
-      includeUser: opts.includeUser,
-      session: opts.session,
-    });
+    try {
+      const limits = transcriptLimits(opts);
+      process.exitCode = await runExport({
+        agent: opts.agent,
+        project: opts.project,
+        out: opts.out,
+        includeUser: opts.includeUser,
+        session: opts.session,
+        includeTranscript: Boolean(opts.includeTranscript || opts.withTranscript),
+        transcriptMaxBytes: limits.transcriptMaxBytes,
+        transcriptMaxMessages: limits.transcriptMaxMessages,
+      });
+    } catch (err) {
+      process.exitCode = reportUserError(err);
+    }
   });
 
 program
@@ -49,13 +63,17 @@ program
   .requiredOption("-a, --agent <id>", "Target agent id (cursor|trae)")
   .option("-p, --project <dir>", "Project root", ".")
   .requiredOption("-f, --file <file>", "Input bundle path")
-  .option("--dry-run", "Do not write files", false)
+  .option("--dry-run", "Do not write files; print create/update/unchanged", false)
+  .option("--include-user", "Also write user-scoped entries under the home directory", false)
+  .option("--apply-transcript", "Write .acb/TRANSCRIPT.md (does not inject a chat UI)", false)
   .action(async (opts) => {
     process.exitCode = await runImport({
       agent: opts.agent,
       project: opts.project,
       file: opts.file,
       dryRun: opts.dryRun,
+      includeUser: opts.includeUser,
+      applyTranscript: opts.applyTranscript,
     });
   });
 
@@ -67,15 +85,76 @@ program
   .option("-p, --project <dir>", "Project root", ".")
   .option("-o, --out-bundle <file>", "Keep intermediate bundle at this path")
   .option("--dry-run", "Export for real, import as dry-run", false)
-  .option("--include-user", "Include user-global on export", false)
+  .option("--include-user", "Read and write user-global configs (user MCP env is redacted)", false)
+  .option("--include-transcript", "Carry a lossy transcript inside the bundle", false)
+  .option("--with-transcript", "Alias of --include-transcript", false)
+  .option("--session <id>", "Session id or plaintext transcript path")
+  .option("--transcript-max-bytes <n>", "Cap transcript payload bytes (default 1500000)")
+  .option("--transcript-max-messages <n>", "Cap transcript messages (default 400)")
+  .option("--apply-transcript", "Also write .acb/TRANSCRIPT.md on import", false)
   .action(async (opts) => {
-    process.exitCode = await runConvert({
-      from: opts.from,
-      to: opts.to,
+    try {
+      const limits = transcriptLimits(opts);
+      process.exitCode = await runConvert({
+        from: opts.from,
+        to: opts.to,
+        project: opts.project,
+        outBundle: opts.outBundle,
+        dryRun: opts.dryRun,
+        includeUser: opts.includeUser,
+        includeTranscript: Boolean(opts.includeTranscript || opts.withTranscript),
+        session: opts.session,
+        transcriptMaxBytes: limits.transcriptMaxBytes,
+        transcriptMaxMessages: limits.transcriptMaxMessages,
+        applyTranscript: opts.applyTranscript,
+      });
+    } catch (err) {
+      process.exitCode = reportUserError(err);
+    }
+  });
+
+const transcript = program.command("transcript").description("Export or apply a lossy transcript");
+
+transcript
+  .command("export")
+  .description("Export repo context plus a lossy transcript into a bundle")
+  .requiredOption("-a, --agent <id>", "Source agent id (cursor|trae)")
+  .option("-p, --project <dir>", "Project root", ".")
+  .requiredOption("-o, --out <file>", "Output bundle path")
+  .option("--include-user", "Also read user-global configs (user MCP env is redacted)", false)
+  .option("--session <id>", "Session id or path to a plaintext export")
+  .option("--transcript-max-bytes <n>", "Cap transcript payload bytes (default 1500000)")
+  .option("--transcript-max-messages <n>", "Cap transcript messages (default 400)")
+  .action(async (opts) => {
+    try {
+      const limits = transcriptLimits(opts);
+      process.exitCode = await runTranscriptExport({
+        agent: opts.agent,
+        project: opts.project,
+        out: opts.out,
+        includeUser: opts.includeUser,
+        session: opts.session,
+        transcriptMaxBytes: limits.transcriptMaxBytes,
+        transcriptMaxMessages: limits.transcriptMaxMessages,
+      });
+    } catch (err) {
+      process.exitCode = reportUserError(err);
+    }
+  });
+
+transcript
+  .command("import")
+  .description("Preview a transcript and, with --apply, write .acb/TRANSCRIPT.md")
+  .option("-p, --project <dir>", "Project root", ".")
+  .requiredOption("-f, --file <file>", "Bundle or transcript JSON")
+  .option("--apply", "Write .acb/TRANSCRIPT.md after printing the preview", false)
+  .option("--dry-run", "With --apply, show the sidecar path without writing", false)
+  .action(async (opts) => {
+    process.exitCode = await runTranscriptImport({
       project: opts.project,
-      outBundle: opts.outBundle,
+      file: opts.file,
+      apply: opts.apply,
       dryRun: opts.dryRun,
-      includeUser: opts.includeUser,
     });
   });
 

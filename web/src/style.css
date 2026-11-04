@@ -145,7 +145,7 @@ input[type="text"], select, textarea {
 
 .banner.error { background: var(--err-bg); color: var(--err); }
 
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.45rem; margin-bottom: 0.8rem; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.45rem; margin-bottom: 0.8rem; }
 
 .stat {
   background: white;
@@ -253,6 +253,19 @@ dialog::backdrop { background: rgba(23, 33, 27, 0.35); }
 
 .empty { color: var(--muted); margin: 0.2rem 0; }
 
+.transcript { display: grid; gap: 0.45rem; max-height: 22rem; overflow: auto; }
+
+.t-msg {
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  padding: 0.55rem 0.7rem;
+  background: white;
+}
+
+.t-msg header { display: flex; justify-content: space-between; gap: 0.6rem; align-items: baseline; }
+
+.t-msg p { margin: 0.35rem 0 0; white-space: pre-wrap; line-height: 1.45; }
+
 .summarize { margin-top: 1rem; }
 
 .summary-draft { display: grid; gap: 0.75rem; margin-top: 0.8rem; }
@@ -268,7 +281,8 @@ dialog::backdrop { background: rgba(23, 33, 27, 0.35); }
 .sources li { color: var(--muted); }
 
 @media (max-width: 860px) {
-  .top, .layout, .stats, .composer, .pair, .path-row { display: grid; grid-template-columns: 1fr; }
+  .top, .layout, .composer, .pair, .path-row { display: grid; grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(3, 1fr); }
   .app { width: min(100% - 1rem, 1180px); }
   h1 { font-size: 1.7rem; }
   .bubble.user { margin-left: 0; }

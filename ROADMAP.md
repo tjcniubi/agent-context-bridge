@@ -5,11 +5,11 @@
 1. **Protocol v0.1** ✅  
    Agent Work Bundle JSON Schema + Zod + `docs/protocol.md` + `validate`
 
-2. **Repo config Cursor ↔ Trae** ✅ scaffold / 🔄 deepen  
+2. **Repo config Cursor ↔ Trae** ✅  
    - [x] 路径映射与 export/import 骨架、扩展名归一化、loss_report  
-   - [ ] 嵌套 AGENTS.md / 子目录 `.trae/rules` 完整扫描  
-   - [ ] `--include-user` 真正读写 `~/.cursor/*` 与 `~/.trae/skills|user_rules`  
-   - [ ] MCP env 脱敏与 dry-run diff
+   - [x] 嵌套 AGENTS.md / 子目录 `.trae/rules`（以及嵌套 `.cursor/rules`）完整扫描，并按来源路径映射到目标布局  
+   - [x] `--include-user` 读写 `~/.cursor/*` 与 `~/.trae/skills|user_rules`；越界符号链接跳过；没有稳定文件的用户规则只记损失  
+   - [x] 用户级 MCP env / headers 脱敏；项目级 env 保留并写入 loss_report。dry-run 列出 create / update / unchanged
 
 3. **work_state summarize** ✅  
    - [x] `acb summarize`：最近的 Cursor JSONL，或笔记 / 明文导出 → goal、decisions、open_loops、file_anchors、constraints、known_pitfalls、last_summary，并写 `loss_report`  
@@ -18,10 +18,11 @@
    - [x] 本地 Web：生成摘要预览，可编辑，确认后才写入 bundle  
    - [ ] 用模型提高摘要质量（可选，仍须输出 `loss_report`）
 
-4. **Lossy transcript**  
-   - [ ] Cursor：把 `agent-transcripts/**/*.jsonl` 写入 bundle `transcript`（标记 dropped_fields）。`summarize` 只用其中的文本抽 Work State，不回写 transcript  
-   - [x] Trae：加密库不可自动导入；明文 Export Chat 交给 `acb summarize`  
-   - [ ] `convert --with-transcript` 开关与体积限制
+4. **Lossy transcript** ✅  
+   - [x] Cursor：解析 `agent-transcripts/**/*.jsonl` → `transcript`（标记 dropped_fields；子代理在体积允许时附上）。`summarize` 只用文本抽 Work State，不负责写入 `transcript`  
+   - [x] Trae：读取 Export Chat / `.acb/imports` / `.trae/exports` 明文；加密库不打开，只记 loss  
+   - [x] `export` / `convert --with-transcript`、体积限制，以及 `acb transcript export|import`  
+   - [x] Web 预览 transcript；确认之后才写 `.acb/TRANSCRIPT.md`，不注入聊天界面
 
 5. **本地 Web 与交互式修复** ✅  
    - [x] `npm run web` / `acb web`，默认只监听 `127.0.0.1`  
