@@ -4,7 +4,7 @@
 
 第一批适配器是 **Cursor ↔ Trae**。仓库级配置（`AGENTS.md`、rules、skills、MCP）会跟着走，但它是支撑层，不是这个项目的主旨。
 
-> **English:** A CLI and local web UI that carry work across AI coding agents through a neutral Agent Work Bundle. Cursor ↔ Trae come first. The point is Work State plus an honest `loss_report`, not a bigger config copier. `acb summarize` fills Work State from readable session text. Transcripts are a separate lossy layer: Cursor JSONL and Trae plaintext exports can be read, the encrypted Trae database is never opened, and a sidecar is written only after you confirm. The local page can pick a project folder or bundle file. Repair drafts and transcript sidecars are written only after you confirm.
+> **English:** A CLI and local web UI that carry work across AI coding agents through a neutral Agent Work Bundle. Cursor ↔ Trae come first. The point is Work State plus an honest `loss_report`, not a bigger config copier. `acb summarize` fills Work State from readable session text. Pass `--model` (or check the local page) to draft with an OpenAI-compatible model; failures fall back to the rule extractor, and nothing is written before you confirm. Transcripts are a separate lossy layer: Cursor JSONL and Trae plaintext exports can be read, the encrypted Trae database is never opened, and a sidecar is written only after you confirm. The local page can pick a project folder or bundle file. Repair drafts and transcript sidecars are written only after you confirm.
 
 ## 为什么存在
 
@@ -26,12 +26,10 @@
 | Layer | 内容 | v0.1 状态 |
 |-------|------|-----------|
 | 0 | 仓库级持久上下文：`AGENTS.md`、rules、skills、MCP | 会扫描嵌套 `AGENTS.md`、`.cursor/rules` 与子目录 `.trae/rules`，并在 Cursor 与 Trae 之间按来源路径映射。`--include-user` 读写 `~/.cursor` 与 `~/.trae/skills`、`~/.trae/user_rules`。用户级 MCP `env` / headers 导出时脱敏；项目级 `env` 保留，并写入 `loss_report`。账号同步的用户规则和 Trae 用户级 MCP 没有稳定文件，只会记损失 |
-| 1 | Work State（目标、决策、开放环、文件锚点、约束、已知坑） | `acb summarize` 可用。它从 Cursor JSONL、笔记或明文导出做规则抽取，并写 `loss_report`。`export` 本身仍写出空的 `work_state` 和 `work_state.not_inferred`。Trae 加密聊天库不读取。修复向导和摘要预览都要确认之后才写入 |
+| 1 | Work State（目标、决策、开放环、文件锚点、约束、已知坑） | `acb summarize` 可用。默认从 Cursor JSONL、笔记或明文导出做规则抽取，并写 `loss_report`。`--model` 或页面勾选时，可以用 OpenAI 兼容接口起草；失败记 `work_state.model_failed` 并回退规则，成功记 `work_state.model_drafted`。`export` 本身仍写出空的 `work_state` 和 `work_state.not_inferred`。Trae 加密聊天库不读取。修复向导和摘要预览都要确认之后才写入 |
 | 2/3 | 有损对话 | Cursor JSONL（`agent-transcripts`）和 Trae 明文导出（`.acb/imports/`、`.trae/exports/`，或 `--session` 指向的文本文件）可以进入 `transcript`。工具结果会截断，附件不内嵌，超限会截断并记 `transcript.truncated`。Trae 加密库不读取。导入默认不落盘；`acb transcript import --apply` 或 Web 确认后才写 `.acb/TRANSCRIPT.md`。`summarize` 只抽 Work State，不负责写入 `transcript` |
 
-本地 Web 已能完成导出、导入、转换、会话摘要预览和 transcript 预览，并按 `loss_report` 做确认式修复。`export` 仍然不会从会话自动摘要，需要单独跑 `acb summarize` 或页面上的「生成摘要预览」。
-
-即将做的事（尚未实现）：可选的外部模型起草。详见 [`ROADMAP.md`](ROADMAP.md)。
+本地 Web 已能完成导出、导入、转换、会话摘要预览和 transcript 预览，并按 `loss_report` 做确认式修复。`export` 仍然不会从会话自动摘要，需要单独跑 `acb summarize` 或页面上的「生成摘要预览」。摘要和修复都可以选外部模型起草，未确认的草案不会进入 bundle，也不会写进项目。详见 [`ROADMAP.md`](ROADMAP.md)。
 
 ## 快速开始
 
@@ -61,6 +59,11 @@ node dist/index.js transcript import -p /path/to/project -f out.bundle.json --ap
 node dist/index.js summarize -p /path/to/project --notes notes.md
 node dist/index.js summarize -p /path/to/project -o out.bundle.json
 
+# 可选：用外部模型起草。没有密钥或调用失败时回退规则抽取，仍然要 -o 才写文件
+export ACB_MODEL=gpt-4o-mini
+export ACB_MODEL_API_KEY=...
+node dist/index.js summarize -p /path/to/project --notes notes.md --model
+
 # 本地 Web（构建页面并监听 127.0.0.1:4173）
 npm run web
 ```
@@ -75,7 +78,7 @@ npm run web
 |------|------|
 | `acb validate <file>` | 按 v0.1 Zod/Schema 校验 bundle |
 | `acb export -a <cursor\|trae> -p <dir> -o <file>` | 导出仓库级上下文。`--include-user` 读取用户目录。`--include-transcript` / `--with-transcript` 读取有损 transcript。`--session` 指定会话 id 或明文文件。Work State 仍是空的，记 `work_state.not_inferred` |
-| `acb summarize` | 从 Cursor JSONL、`--notes` 或 `--transcript` 填充 Work State，并写诚实的 `loss_report`。默认只预览；`-o` 才写入 bundle。不把完整对话写进 `transcript` |
+| `acb summarize` | 从 Cursor JSONL、`--notes` 或 `--transcript` 填充 Work State，并写诚实的 `loss_report`。默认只预览；`-o` 才写入 bundle。`--model` 才调用外部模型。不把完整对话写进 `transcript` |
 | `acb import -a <…> -p <dir> -f <file>` | 写入目标端目录布局。已有 Work State 时附带 `.acb/WORK_STATE.md`。`--apply-transcript` 才写 `.acb/TRANSCRIPT.md`。`--include-user` 才写用户目录。`--dry-run` 列出 create / update / unchanged |
 | `acb convert --from … --to … -p <dir>` | 先导出再导入。`-o` / `--out-bundle` 保留中间 bundle。`--with-transcript` 把 transcript 放进 bundle。`--apply-transcript` 同时写 sidecar。`--dry-run` 仍会导出，导入只预演 |
 | `acb transcript export` | 同 export，但总是尝试读取 transcript |
@@ -87,6 +90,28 @@ npm run web
 
 `--transcript-max-bytes` 默认 `1500000`，`--transcript-max-messages` 默认 `400`。超出部分截断并记入 `loss_report`。
 
+## 可选的外部模型起草
+
+不加 `--model`、页面也不勾选时，行为和以前一样：规则抽取，不访问网络。环境变量里即使已经有密钥，也不会因此发出请求。
+
+勾选或加上 `--model` 之后，用同一份已经读到的笔记、Cursor JSONL 文本或明文导出，向 OpenAI 兼容的 Chat Completions 接口要一份 Work State。修复向导则把当前这条回答交给模型起草。模型失败、超时、没有密钥、返回空草案或无法解析时，记 `work_state.model_failed`，并回退到规则抽取，命令和页面请求本身不因此失败。成功记 `work_state.model_drafted`。来源侧原有的损失码（截断、工具结果丢弃、加密库未读取、对话没有复制进 `transcript`）仍然保留。
+
+密钥不会作为命令行参数。Web 请求体也不能提交密钥或改写 API 地址；页面只发送「要不要用模型」，地址和密钥来自启动 `acb web` 的本机进程。
+
+| 变量 | 作用 |
+|------|------|
+| `ACB_MODEL` | 模型 id，例如 `gpt-4o-mini`。也可用 `--model-name` 覆盖 |
+| `ACB_MODEL_BASE_URL` | API 根路径，默认 `https://api.openai.com/v1`。也可用 `--model-base-url` 覆盖 |
+| `ACB_MODEL_API_KEY` | 密钥。优先于配置文件里的 `apiKey` |
+| `ACB_MODEL_CONFIG` | 可选 JSON 文件，或用 `--model-config` 指向它。字段为 `model`、`baseUrl`、`apiKey` |
+| `ACB_MODEL_TIMEOUT_MS` | 超时毫秒，默认 `30000`，限制在 `1000`–`120000` |
+
+示例（没有密钥）：[`examples/model.example.json`](examples/model.example.json)。本机文件可以放在已忽略的 `.acb/model.json`，再用 `ACB_MODEL_CONFIG` 指过去。不要把含密钥的配置提交进仓库。
+
+`loss_report` 和命令输出里的密钥、`sk-...`、Bearer token 会换成 `[REDACTED]`。发给模型的材料也会先去掉这些标记，避免把密钥再送出去。
+
+摘要预览在确认之前只存在于页面上。确认之后，Work State 和对应的 `loss_report` 才进入当前 bundle。修复向导的草案在确认或拒绝之前不进入 bundle；确认写入或拒绝之后，模型账本才追加到 `loss_report`。拒绝不会把草案正文写进 `work_state`。`.acb/WORK_STATE.md` 仍然要单独确认。
+
 ## 本地 Web
 
 `npm run web` 会先构建页面，再启动本地服务。CLI（`npm run build`）和前端（`npm run build:web`）都构建过之后，也可以 `node dist/index.js web`。服务默认只绑定本机回环地址，读写的是你本机上的项目路径。
@@ -95,9 +120,9 @@ npm run web
 
 1. 粘贴项目路径，或用「选择项目文件夹」。浏览器选中的文件夹没有绝对路径，本机服务会按目录名和其中的文件定位；对不上时仍用路径框或「服务器目录」。bundle 用「选择 bundle 文件」读取内容。
 2. 在 Cursor 与 Trae 之间导出、导入或转换，并查看 `loss_report`。可以勾选用户级配置和有损 transcript。勾选预演时，导入不写项目文件，并标出 create / update / unchanged。
-3. 「生成摘要预览」从可读会话或笔记抽出 Work State。预览可以改，确认后才进入当前 bundle。加密的 Trae 聊天库不会读取。
+3. 「生成摘要预览」从可读会话或笔记抽出 Work State。默认规则抽取；可以勾选外部模型。预览可以改，确认后才进入当前 bundle。加密的 Trae 聊天库不会读取。
 4. 如果 bundle 里有 transcript，页面会预览角色、正文和 `dropped_fields`。确认之后才写入 `.acb/TRANSCRIPT.md`。这一步不改聊天界面。
-5. 开始逐条修复。向导按损失项提问，根据回答起草 Work State。
+5. 开始逐条修复。向导按损失项提问，根据回答起草 Work State。可以勾选外部模型起草，失败则回退规则。
 6. 每一条草案都要确认或拒绝之后才写入。也可以一次确认或拒绝全部待定草案。对话里输入「确认」「拒绝」「修改」「全部确认」「全部拒绝」，效果和按钮相同。
 7. 下载更新后的 bundle，或把已确认的内容写到项目里的 `.acb/WORK_STATE.md`。
 
@@ -129,8 +154,8 @@ transcript?   messages[]（可选；可标 dropped_fields，附件默认不内�
 
 ## 安全提示
 
-用户级 MCP 的 `env` 和 headers 在 `--include-user` 导出时会脱敏。项目级 MCP `env` 仍会原样留在 bundle 里，并写入 `loss_report`。不要把含密钥的 bundle 提交到公开仓库。
+用户级 MCP 的 `env` 和 headers 在 `--include-user` 导出时会脱敏。项目级 MCP `env` 仍会原样留在 bundle 里，并写入 `loss_report`。不要把含密钥的 bundle 提交到公开仓库。外部模型的 API key 只放在环境变量或未纳入版本库的配置文件里，不会写进命令行，也不会从浏览器请求体读取。
 
 ## 贡献 / 下一步
 
-见 [`ROADMAP.md`](ROADMAP.md)。仓库级配置、`acb summarize` 和有损 transcript 都已经可用。确认之后才写入的门槛保持不变。下一步是可选的外部模型起草。
+见 [`ROADMAP.md`](ROADMAP.md)。仓库级配置、`acb summarize`、可选的外部模型起草和有损 transcript 都已经可用。确认之后才写入的门槛保持不变。之后是更多适配器、schema `0.2` 和 npm 发布。

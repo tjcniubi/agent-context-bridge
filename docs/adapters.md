@@ -44,7 +44,7 @@
 
 ### Layer 1（`acb summarize`）
 
-`acb summarize` 读取最近一个父会话的 JSONL（可用 `--session` 指定），跳过 `subagents/`。工具结果、附件和思考块不进入 Work State，并记入 `loss_report`。这是规则抽取，不是完整 transcript 恢复，也不会把消息写进 bundle 的 `transcript` 字段。完整对话进 `transcript` 走 `acb transcript` 或 `export --include-transcript`。
+`acb summarize` 读取最近一个父会话的 JSONL（可用 `--session` 指定），跳过 `subagents/`。工具结果、附件和思考块不进入 Work State，并记入 `loss_report`。默认是规则抽取。`--model` 可以用同一份可读文本调用外部模型起草，失败则回退规则，并在 `loss_report` 写明。这不是完整 transcript 恢复，也不会把消息写进 bundle 的 `transcript` 字段。完整对话进 `transcript` 走 `acb transcript` 或 `export --include-transcript`。
 
 ---
 

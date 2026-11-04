@@ -28,6 +28,10 @@ export interface SummarizeCliOptions {
   home?: string;
   maxSessions?: string;
   writeSidecar?: boolean;
+  model?: boolean;
+  modelName?: string;
+  modelBaseUrl?: string;
+  modelConfig?: string;
 }
 
 export async function runSummarize(opts: SummarizeCliOptions): Promise<number> {
@@ -38,6 +42,9 @@ export async function runSummarize(opts: SummarizeCliOptions): Promise<number> {
       throw new UserInputError("--max-sessions 必须是正整数。");
     }
     const projectRoot = resolve(opts.project ?? ".");
+    if (!opts.model && (opts.modelName || opts.modelBaseUrl || opts.modelConfig)) {
+      console.error("--model-name、--model-base-url、--model-config 只有在加上 --model 时才会使用。");
+    }
     const result = await summarizeSessions({
       projectRoot,
       agent,
@@ -47,6 +54,16 @@ export async function runSummarize(opts: SummarizeCliOptions): Promise<number> {
       cursorHome: opts.cursorHome,
       homeDir: opts.home,
       maxSessions,
+      ...(opts.model
+        ? {
+            model: {
+              enabled: true,
+              ...(opts.modelName ? { model: opts.modelName } : {}),
+              ...(opts.modelBaseUrl ? { baseUrl: opts.modelBaseUrl } : {}),
+              ...(opts.modelConfig ? { configPath: opts.modelConfig } : {}),
+            },
+          }
+        : {}),
     });
     const existing = opts.out ? await readBundleIfPresent(opts.out) : undefined;
     const losses = summaryLossesFor(existing?.work_state, result);

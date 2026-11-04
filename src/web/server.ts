@@ -23,9 +23,9 @@ import {
 } from "../protocol/work-state-markdown.js";
 import {
   RepairFlowError,
-  answerCurrent,
+  answerWithModel,
   confirmProposals,
-  draftAnswers,
+  draftAnswersWithModel,
   pendingIds,
   rejectProposals,
   reviseProposal,
@@ -34,6 +34,7 @@ import {
   type RepairSession,
 } from "../repair/guide.js";
 import { isDirectory, writeText } from "../utils/fs.js";
+import type { ModelToggle } from "../summarize/model.js";
 import {
   applyWorkState,
   mergeSummary,
@@ -326,6 +327,7 @@ async function handleApi(
       transcriptTexts: transcriptTexts(body),
       cursorHome: optionalString(body, "cursorHome"),
       homeDir: optionalString(body, "home"),
+      model: serverModelToggle(body),
     });
     const losses = summaryLossesFor(existing?.work_state, result);
     sendJson(res, 200, {
@@ -406,7 +408,7 @@ async function handleApi(
     }
     if (method !== "POST" || !action) throw new HttpError(405, "不支持的方法。");
     const body = await readJson(req);
-    const updated = applyRepairAction(session, action, body);
+    const updated = await applyRepairAction(session, action, body);
     store.set(id, updated);
     sendJson(res, 200, toRepairView(updated));
     return true;
@@ -415,10 +417,11 @@ async function handleApi(
   throw new HttpError(404, `未知接口 ${path}`);
 }
 
-function applyRepairAction(session: RepairSession, action: string, body: JsonRecord): RepairSession {
+async function applyRepairAction(session: RepairSession, action: string, body: JsonRecord): Promise<RepairSession> {
+  const model = serverModelToggle(body);
   if (action === "answer") {
     if (typeof body.text !== "string") throw new RepairFlowError("请提供 text。");
-    return answerCurrent(session, body.text);
+    return answerWithModel(session, body.text, model);
   }
   if (action === "draft") {
     if (!Array.isArray(body.answers)) throw new RepairFlowError("请提供 answers。");
@@ -429,7 +432,7 @@ function applyRepairAction(session: RepairSession, action: string, body: JsonRec
       }
       return { lossIndex: row.lossIndex, text: row.text };
     });
-    return draftAnswers(session, answers);
+    return draftAnswersWithModel(session, answers, model);
   }
   if (action === "confirm" || action === "reject") {
     const ids = proposalIds(session, body);
@@ -568,6 +571,15 @@ function optionalString(body: JsonRecord, key: string): string | undefined {
 
 function bool(body: JsonRecord, key: string): boolean {
   return body[key] === true;
+}
+
+/**
+ * The page can only turn drafting on. The key, model id, and base URL come
+ * from this process's environment, never from the request body.
+ */
+function serverModelToggle(body: JsonRecord): ModelToggle | undefined {
+  if (!bool(body, "model")) return undefined;
+  return { enabled: true };
 }
 
 function optionalInt(body: JsonRecord, key: string): number | undefined {

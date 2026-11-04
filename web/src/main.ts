@@ -125,7 +125,7 @@ app.innerHTML = `
     </div>
     <section class="panel summarize">
       <h2>会话摘要</h2>
-      <p class="hint">从 Cursor 的可读会话、笔记，或 Trae 的明文导出抽出 Work State。加密的 Trae 聊天库不会读取。预览可以改，确认后才写入当前 bundle。</p>
+      <p class="hint">从 Cursor 的可读会话、笔记，或 Trae 的明文导出抽出 Work State。默认用规则抽取。勾选外部模型时，本机进程按环境变量调用兼容接口，失败则回退规则。加密的 Trae 聊天库不会读取。预览可以改，确认后才写入当前 bundle。</p>
       <div class="stack">
         <label>摘要来源
           <select id="summary-agent">
@@ -137,6 +137,9 @@ app.innerHTML = `
         <label>笔记（可选，带标题时优先）
           <textarea id="summary-notes" placeholder="## 目标&#10;把规则迁过去"></textarea>
         </label>
+        <div class="checks">
+          <label><input id="summary-model" type="checkbox" /> 用外部模型起草（密钥只在本机环境变量里；失败则回退规则；确认之前不写入）</label>
+        </div>
         <div class="actions">
           <button id="pick-notes" class="secondary" type="button">选择笔记或 transcript 文件</button>
           <button id="summarize" type="button">生成摘要预览</button>
@@ -149,6 +152,9 @@ app.innerHTML = `
     <section class="panel repair">
       <h2>交互式修复</h2>
       <p id="repair-progress" class="meta">确认之前，草案只停在对话里。</p>
+      <div class="checks">
+        <label><input id="repair-model" type="checkbox" /> 用外部模型把回答起草成 Work State。未确认的草案不会进入 bundle</label>
+      </div>
       <div id="repair-log" class="chat" aria-live="polite"></div>
       <div id="repair-card"></div>
       <form id="repair-form" class="composer">
@@ -464,6 +470,7 @@ async function doPreview(): Promise<void> {
       notesText: el<HTMLTextAreaElement>("summary-notes").value,
       transcriptTexts: attachedTranscripts,
       bundle: state.bundle,
+      model: checked("summary-model"),
     },
   });
   summaryDraft = result;
@@ -522,7 +529,7 @@ async function doAnswer(): Promise<void> {
   if (!text.trim()) throw new Error("请先写回答。");
   state.repair = await api<RepairSessionView>(`/api/repair/${state.repair.id}/answer`, {
     method: "POST",
-    body: { text },
+    body: { text, model: checked("repair-model") },
   });
   state.bundle = state.repair.bundle;
   el<HTMLTextAreaElement>("repair-input").value = "";
@@ -775,6 +782,7 @@ function proposalCard(proposal: RepairSessionView["proposals"][number]): HTMLEle
   const preview = document.createElement("pre");
   preview.className = "preview";
   preview.textContent = proposal.preview;
+  const modelNote = modelDraftNote(proposal.draftLosses);
   const actions = document.createElement("div");
   actions.className = "actions";
   actions.append(
@@ -782,8 +790,22 @@ function proposalCard(proposal: RepairSessionView["proposals"][number]): HTMLEle
     actionButton("拒绝", () => act(`/reject`, { ids: [proposal.id] }), "danger"),
     actionButton("修改回答", () => act(`/revise`, { id: proposal.id }), "secondary"),
   );
-  wrap.append(stamp, title, preview, actions);
+  wrap.append(stamp, title, preview);
+  if (modelNote) wrap.append(modelNote);
+  wrap.append(actions);
   return wrap;
+}
+
+function modelDraftNote(losses: { code: string }[] | undefined): HTMLElement | undefined {
+  const drafted = losses?.some((entry) => entry.code === "work_state.model_drafted");
+  const failed = losses?.some((entry) => entry.code === "work_state.model_failed");
+  if (!drafted && !failed) return undefined;
+  const note = document.createElement("p");
+  note.className = "hint";
+  note.textContent = drafted
+    ? "外部模型起草。确认之前不会写入 bundle。"
+    : "外部模型失败，这条是规则抽取。确认之前不会写入 bundle。";
+  return note;
 }
 
 function renderBatch(repair: RepairSessionView): void {
@@ -827,13 +849,16 @@ function renderBatch(repair: RepairSessionView): void {
       const preview = document.createElement("pre");
       preview.className = "preview";
       preview.textContent = pending.preview;
+      const modelNote = modelDraftNote(pending.draftLosses);
       const actions = document.createElement("div");
       actions.className = "actions";
       actions.append(
         actionButton("确认这条", () => act(`/confirm`, { ids: [pending.id] })),
         actionButton("拒绝这条", () => act(`/reject`, { ids: [pending.id] }), "danger"),
       );
-      box.append(preview, actions);
+      box.append(preview);
+      if (modelNote) box.append(modelNote);
+      box.append(actions);
     } else if (!settled) {
       const area = document.createElement("textarea");
       area.placeholder = "为这一条写回答，或填写「跳过」。生成草案不会写入。";
@@ -876,7 +901,7 @@ async function doDraft(fields: HTMLTextAreaElement[]): Promise<void> {
   if (answers.length === 0) throw new Error("请至少填写一条批量回答。");
   state.repair = await api<RepairSessionView>(`/api/repair/${state.repair.id}/draft`, {
     method: "POST",
-    body: { answers },
+    body: { answers, model: checked("repair-model") },
   });
   state.bundle = state.repair.bundle;
 }

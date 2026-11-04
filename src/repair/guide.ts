@@ -12,6 +12,7 @@ import type {
   WorkStateFileAnchor,
   WorkStateOpenLoop,
 } from "../protocol/types.js";
+import { draftRepairPatch, modelFailedEntry, type ModelToggle } from "../summarize/model.js";
 import { loss } from "../utils/loss-report.js";
 
 export class RepairFlowError extends Error {
@@ -50,6 +51,8 @@ export interface RepairProposal {
   patch: WorkStatePatch;
   noop: boolean;
   status: "pending" | "confirmed" | "rejected";
+  /** Model ledger for this draft. Copied onto the bundle only when the draft is settled. */
+  draftLosses: LossReportEntry[];
 }
 
 export type RepairPhase = "asking" | "awaiting_confirm" | "done";
@@ -212,8 +215,8 @@ export function startRepair(bundle: AgentWorkBundle, id?: string): RepairSession
 }
 
 type DraftResult =
-  | { kind: "noop" }
-  | { kind: "patch"; patch: WorkStatePatch }
+  | { kind: "noop"; draftLosses?: LossReportEntry[] }
+  | { kind: "patch"; patch: WorkStatePatch; draftLosses?: LossReportEntry[] }
   | { kind: "clarify"; message: string };
 
 function normPriority(raw: string): WorkStateOpenLoop["priority"] | undefined {
@@ -410,29 +413,94 @@ function upsertPending(
     patch: draft.kind === "patch" ? draft.patch : {},
     noop: draft.kind === "noop",
     status: "pending",
+    draftLosses: [...(draft.draftLosses ?? [])],
   };
   session.proposals.push(proposal);
   return proposal;
 }
 
 function proposalText(proposal: RepairProposal): string {
+  const modelNote = modelNotice(proposal);
   if (proposal.noop) {
-    return [
-      `已为 ${proposal.code} 起草「不写入」。`,
-      "这只是草案，Work State 还没有变化。",
-      "确认表示接受跳过；拒绝表示不接受这条处理。",
-    ].join("\n");
+    const lines = [`已为 ${proposal.code} 起草「不写入」。`];
+    if (modelNote) lines.push(modelNote);
+    lines.push("这只是草案，Work State 还没有变化。", "确认表示接受跳过；拒绝表示不接受这条处理。");
+    return lines.join("\n");
   }
-  return [
-    `已为 ${proposal.code} 起草，尚未写入 Work State。`,
-    "",
-    previewPatch(proposal.patch),
-    "",
-    "请确认写入，或拒绝这条草案。",
-  ].join("\n");
+  const lines = [`已为 ${proposal.code} 起草，尚未写入 Work State。`];
+  if (modelNote) lines.push(modelNote);
+  lines.push("", previewPatch(proposal.patch), "", "请确认写入，或拒绝这条草案。");
+  return lines.join("\n");
 }
 
-export function answerCurrent(session: RepairSession, text: string): RepairSession {
+function modelNotice(proposal: RepairProposal): string {
+  if (proposal.draftLosses.some((entry) => entry.code === "work_state.model_drafted")) {
+    return "外部模型起草了这条草案。确认或拒绝之前不会写入。";
+  }
+  if (proposal.draftLosses.some((entry) => entry.code === "work_state.model_failed")) {
+    return "外部模型没有成功，已改用规则抽取。确认或拒绝之前不会写入。";
+  }
+  return "";
+}
+
+function patchFromWorkState(ws: WorkState): WorkStatePatch {
+  const patch: WorkStatePatch = {};
+  if (ws.goal) patch.goal = ws.goal;
+  if (ws.last_summary) patch.last_summary = ws.last_summary;
+  if (ws.decisions.length) patch.decisions = ws.decisions.map((item) => ({ ...item }));
+  if (ws.open_loops.length) patch.open_loops = ws.open_loops.map((item) => ({ ...item }));
+  if (ws.file_anchors.length) patch.file_anchors = ws.file_anchors.map((item) => ({ ...item }));
+  if (ws.constraints.length) patch.constraints = ws.constraints.slice();
+  if (ws.known_pitfalls.length) patch.known_pitfalls = ws.known_pitfalls.slice();
+  return patch;
+}
+
+async function selectDraft(entry: LossReportEntry, text: string, model?: ModelToggle): Promise<DraftResult> {
+  const rule = draftFromAnswer(entry, text);
+  if (!model?.enabled || rule.kind !== "patch") return rule;
+  const outcome = await draftRepairPatch(model, {
+    code: entry.code,
+    message: entry.message,
+    ...(entry.path ? { path: entry.path } : {}),
+    answer: text,
+  });
+  if (!outcome.ok) return { ...rule, draftLosses: outcome.losses };
+  const patch = patchFromWorkState(outcome.workState);
+  if (isEmptyPatch(patch)) {
+    return { ...rule, draftLosses: [modelFailedEntry("model returned an empty Work State")] };
+  }
+  return { kind: "patch", patch, draftLosses: outcome.losses };
+}
+
+export async function answerWithModel(
+  session: RepairSession,
+  text: string,
+  model?: ModelToggle,
+): Promise<RepairSession> {
+  const entry = session.losses[session.cursor];
+  if (!model?.enabled || session.phase !== "asking" || normalizeCommand(text) || !entry) {
+    return answerCurrent(session, text);
+  }
+  const drafted = await selectDraft(entry, text, model);
+  return answerCurrent(session, text, drafted);
+}
+
+export async function draftAnswersWithModel(
+  session: RepairSession,
+  answers: DraftAnswerInput[],
+  model?: ModelToggle,
+): Promise<RepairSession> {
+  if (!model?.enabled) return draftAnswers(session, answers);
+  const presets = new Map<number, DraftResult>();
+  for (const answer of answers) {
+    const entry = session.losses[answer.lossIndex];
+    if (!entry) continue;
+    presets.set(answer.lossIndex, await selectDraft(entry, answer.text, model));
+  }
+  return draftAnswers(session, answers, presets);
+}
+
+export function answerCurrent(session: RepairSession, text: string, preset?: DraftResult): RepairSession {
   const command = normalizeCommand(text);
   if (session.phase === "done") {
     throw new RepairFlowError("修复已经结束。可以下载 bundle。");
@@ -461,7 +529,7 @@ export function answerCurrent(session: RepairSession, text: string): RepairSessi
   if (!session.losses[session.cursor]) {
     throw new RepairFlowError("没有待回答的损失项。");
   }
-  const drafted = draftFromAnswer(session.losses[session.cursor], answer);
+  const drafted = preset ?? draftFromAnswer(session.losses[session.cursor], answer);
   if (drafted.kind === "clarify") {
     pushAgent(next, drafted.message);
     return next;
@@ -478,7 +546,11 @@ export interface DraftAnswerInput {
   text: string;
 }
 
-export function draftAnswers(session: RepairSession, answers: DraftAnswerInput[]): RepairSession {
+export function draftAnswers(
+  session: RepairSession,
+  answers: DraftAnswerInput[],
+  presets?: Map<number, DraftResult>,
+): RepairSession {
   if (answers.length === 0) throw new RepairFlowError("请至少填写一条回答。");
   const next = cloneSession(session);
   const notes: string[] = [];
@@ -487,7 +559,7 @@ export function draftAnswers(session: RepairSession, answers: DraftAnswerInput[]
       throw new RepairFlowError(`损失序号无效：${String(answer.lossIndex)}`);
     }
     assertUnset(next, answer.lossIndex);
-    const drafted = draftFromAnswer(next.losses[answer.lossIndex], answer.text);
+    const drafted = presets?.get(answer.lossIndex) ?? draftFromAnswer(next.losses[answer.lossIndex], answer.text);
     if (drafted.kind === "clarify") {
       throw new RepairFlowError(`第 ${answer.lossIndex + 1} 条：${drafted.message}`);
     }
@@ -505,6 +577,14 @@ export function draftAnswers(session: RepairSession, answers: DraftAnswerInput[]
     ["已生成草案，尚未写入 Work State。", ...notes.map((line) => `- ${line}`)].join("\n"),
   );
   return next;
+}
+
+function appendDraftLosses(session: RepairSession, proposal: RepairProposal): void {
+  if (proposal.draftLosses.length === 0) return;
+  session.bundle.manifest.loss_report = [
+    ...session.bundle.manifest.loss_report,
+    ...proposal.draftLosses.map((entry) => ({ ...entry })),
+  ];
 }
 
 function applyPatch(work: WorkState, patch: WorkStatePatch): WorkState {
@@ -536,6 +616,7 @@ function settle(session: RepairSession, proposal: RepairProposal, status: "confi
     );
   }
   proposal.status = status;
+  appendDraftLosses(session, proposal);
   const entry = session.losses[proposal.lossIndex];
   if (status === "rejected" || proposal.noop) {
     session.bundle.manifest.loss_report = [
