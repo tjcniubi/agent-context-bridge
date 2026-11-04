@@ -1,9 +1,7 @@
-import { resolve } from "node:path";
-import { readFile } from "node:fs/promises";
 import { getAdapter } from "../adapters/index.js";
-import { validateBundle } from "../protocol/validate.js";
 import { formatLossReport } from "../utils/loss-report.js";
-import type { AgentWorkBundle } from "../protocol/types.js";
+import { importProject, readBundleFile } from "../core/operations.js";
+import { reportUserError } from "./export.js";
 
 export interface ImportCliOptions {
   agent: string;
@@ -13,34 +11,24 @@ export interface ImportCliOptions {
 }
 
 export async function runImport(opts: ImportCliOptions): Promise<number> {
-  const adapter = getAdapter(opts.agent);
-  const raw = await readFile(opts.file, "utf8");
-  let data: unknown;
   try {
-    data = JSON.parse(raw);
+    const adapter = getAdapter(opts.agent);
+    const data = await readBundleFile(opts.file);
+    const { written, losses } = await importProject({
+      agent: opts.agent,
+      project: opts.project,
+      bundle: data,
+      dryRun: opts.dryRun,
+    });
+
+    console.log(
+      `${opts.dryRun ? "[dry-run] " : ""}Imported → ${adapter.displayName} (${written.length} paths)`,
+    );
+    for (const w of written) console.log(`  + ${w}`);
+    console.log("Loss report:");
+    console.log(formatLossReport(losses));
+    return 0;
   } catch (err) {
-    console.error(`Invalid JSON: ${(err as Error).message}`);
-    return 1;
+    return reportUserError(err);
   }
-  const check = validateBundle(data);
-  if (!check.ok) {
-    console.error("Bundle failed validation:");
-    for (const e of check.errors) console.error(`  - ${e}`);
-    return 1;
-  }
-  const bundle = check.bundle as AgentWorkBundle;
-  bundle.manifest.target_agent = adapter.id;
-
-  const { written, losses } = await adapter.importRepoContext(bundle, {
-    projectRoot: resolve(opts.project),
-    dryRun: opts.dryRun,
-  });
-
-  console.log(
-    `${opts.dryRun ? "[dry-run] " : ""}Imported → ${adapter.displayName} (${written.length} paths)`,
-  );
-  for (const w of written) console.log(`  + ${w}`);
-  console.log("Loss report:");
-  console.log(formatLossReport(losses));
-  return 0;
 }

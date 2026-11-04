@@ -55,6 +55,14 @@
 
 **约定**：凡无法保真迁移的内容，必须写入 `loss_report`，禁止静默丢弃。
 
+本地 Web 的修复向导可以在用户明确确认或拒绝之后追加下面这些账本条目。未确认的草案不会写入 bundle。以 `repair.` 开头的条目是处理记录，向导不会再把它们当成待补的损失项。
+
+| `code` | 何时写入 |
+|--------|----------|
+| `repair.applied` | 用户确认草案，对应内容已经进入 `work_state` |
+| `repair.skipped` | 用户确认跳过，不修改 `work_state` |
+| `repair.declined` | 用户拒绝草案，不修改 `work_state` |
+
 ---
 
 ## `repo_context`

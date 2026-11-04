@@ -40,7 +40,10 @@ import {
   readTextIfExists,
   writeText,
 } from "../utils/fs.js";
-import { renderWorkStateMarkdown } from "./cursor.js";
+import {
+  hasWorkStateContent,
+  renderWorkStateMarkdown,
+} from "../protocol/work-state-markdown.js";
 
 function parseYamlishFrontmatter(content: string): {
   always_apply?: boolean;
@@ -360,11 +363,7 @@ export const traeAdapter: AgentAdapter = {
       );
     }
 
-    if (
-      bundle.work_state.goal ||
-      bundle.work_state.decisions.length ||
-      bundle.work_state.open_loops.length
-    ) {
+    if (hasWorkStateContent(bundle)) {
       await write(".acb/WORK_STATE.md", renderWorkStateMarkdown(bundle));
       losses.push(
         loss(

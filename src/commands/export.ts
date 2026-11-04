@@ -1,8 +1,8 @@
-import { resolve } from "node:path";
 import { writeText } from "../utils/fs.js";
 import { getAdapter } from "../adapters/index.js";
 import { formatLossReport } from "../utils/loss-report.js";
-import { validateBundle } from "../protocol/validate.js";
+import { UserInputError } from "../core/errors.js";
+import { exportProject } from "../core/operations.js";
 
 export interface ExportCliOptions {
   agent: string;
@@ -13,27 +13,33 @@ export interface ExportCliOptions {
 }
 
 export async function runExport(opts: ExportCliOptions): Promise<number> {
-  const adapter = getAdapter(opts.agent);
-  const projectRoot = resolve(opts.project);
-  const { bundle, losses } = await adapter.exportRepoContext({
-    projectRoot,
-    includeUser: opts.includeUser,
-    sessionId: opts.session,
-  });
+  try {
+    const adapter = getAdapter(opts.agent);
+    const { bundle, losses } = await exportProject({
+      agent: opts.agent,
+      project: opts.project,
+      includeUser: opts.includeUser,
+      sessionId: opts.session,
+    });
 
-  const check = validateBundle(bundle);
-  if (!check.ok) {
-    console.error("Exported bundle failed self-validation:");
-    for (const e of check.errors) console.error(`  - ${e}`);
+    await writeText(opts.out, JSON.stringify(bundle, null, 2) + "\n");
+    console.log(`Exported ${adapter.displayName} → ${opts.out}`);
+    console.log(
+      `  rules=${bundle.repo_context.rules.length} skills=${bundle.repo_context.skills.length} mcp=${bundle.repo_context.mcp_servers.length}`,
+    );
+    console.log("Loss report:");
+    console.log(formatLossReport(losses));
+    return 0;
+  } catch (err) {
+    return reportUserError(err);
+  }
+}
+
+export function reportUserError(err: unknown): number {
+  if (err instanceof UserInputError) {
+    console.error(err.message);
+    for (const detail of err.details) console.error(`  - ${detail}`);
     return 1;
   }
-
-  await writeText(opts.out, JSON.stringify(bundle, null, 2) + "\n");
-  console.log(`Exported ${adapter.displayName} → ${opts.out}`);
-  console.log(
-    `  rules=${bundle.repo_context.rules.length} skills=${bundle.repo_context.skills.length} mcp=${bundle.repo_context.mcp_servers.length}`,
-  );
-  console.log("Loss report:");
-  console.log(formatLossReport(losses));
-  return 0;
+  throw err;
 }

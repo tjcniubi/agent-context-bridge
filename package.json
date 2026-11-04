@@ -9,10 +9,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:web": "vite build --config web/vite.config.ts",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "web": "npm run build:web && tsx src/index.ts web",
+    "web:dev": "tsx src/index.ts web --dev",
     "validate:sample": "tsx src/index.ts validate examples/sample.bundle.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "test": "tsx --test test/**/*.test.ts"
   },
   "engines": {
     "node": ">=20"
@@ -33,6 +37,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^6.4.1"
   }
 }

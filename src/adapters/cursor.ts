@@ -33,7 +33,10 @@ import {
 } from "../protocol/types.js";
 import { loss } from "../utils/loss-report.js";
 import {
-  exists,
+  hasWorkStateContent,
+  renderWorkStateMarkdown,
+} from "../protocol/work-state-markdown.js";
+import {
   listFilesRecursive,
   readJsonIfExists,
   readTextIfExists,
@@ -359,11 +362,7 @@ export const cursorAdapter: AgentAdapter = {
     }
 
     // Work state / transcript not written as native Cursor files yet
-    if (
-      bundle.work_state.goal ||
-      bundle.work_state.decisions.length ||
-      bundle.work_state.open_loops.length
-    ) {
+    if (hasWorkStateContent(bundle)) {
       await write(
         ".acb/WORK_STATE.md",
         renderWorkStateMarkdown(bundle),
@@ -391,51 +390,3 @@ export const cursorAdapter: AgentAdapter = {
     return { written, losses };
   },
 };
-
-function renderWorkStateMarkdown(bundle: AgentWorkBundle): string {
-  const ws = bundle.work_state;
-  const lines: string[] = ["# Agent Work State", ""];
-  if (ws.goal) {
-    lines.push("## Goal", "", ws.goal, "");
-  }
-  if (ws.last_summary) {
-    lines.push("## Summary", "", ws.last_summary, "");
-  }
-  if (ws.decisions.length) {
-    lines.push("## Decisions", "");
-    for (const d of ws.decisions) {
-      lines.push(`- ${d.summary}${d.rationale ? ` — ${d.rationale}` : ""}`);
-    }
-    lines.push("");
-  }
-  if (ws.open_loops.length) {
-    lines.push("## Open loops", "");
-    for (const o of ws.open_loops) {
-      lines.push(
-        `- [${o.status ?? "open"}] ${o.summary}${o.priority ? ` (${o.priority})` : ""}`,
-      );
-    }
-    lines.push("");
-  }
-  if (ws.file_anchors.length) {
-    lines.push("## File anchors", "");
-    for (const f of ws.file_anchors) {
-      lines.push(`- \`${f.path}\`${f.note ? `: ${f.note}` : ""}`);
-    }
-    lines.push("");
-  }
-  if (ws.constraints.length) {
-    lines.push("## Constraints", "");
-    for (const c of ws.constraints) lines.push(`- ${c}`);
-    lines.push("");
-  }
-  if (ws.known_pitfalls.length) {
-    lines.push("## Known pitfalls", "");
-    for (const p of ws.known_pitfalls) lines.push(`- ${p}`);
-    lines.push("");
-  }
-  return lines.join("\n");
-}
-
-// Re-export helper for Trae adapter sidecars
-export { renderWorkStateMarkdown };
