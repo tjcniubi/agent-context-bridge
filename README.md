@@ -4,7 +4,7 @@
 
 第一批适配器是 **Cursor ↔ Trae**。仓库级配置（`AGENTS.md`、rules、skills、MCP）会跟着走，但它是支撑层，不是这个项目的主旨。
 
-> **English:** A CLI that carries work across AI coding agents through a neutral Agent Work Bundle. Cursor ↔ Trae come first. The point is Work State plus an honest `loss_report`, not a bigger config copier. Transcripts are modeled as lossy but still readable.
+> **English:** A CLI and local web UI that carry work across AI coding agents through a neutral Agent Work Bundle. Cursor ↔ Trae come first. The point is Work State plus an honest `loss_report`, not a bigger config copier. Transcripts are modeled as lossy but still readable. The web repair guide drafts Work State and writes it only after you confirm.
 
 ## 为什么存在
 
@@ -29,6 +29,8 @@
 | 1 | Work State（目标、决策、开放环、文件锚点、约束、已知坑） | 协议字段和导入 sidecar（`.acb/WORK_STATE.md`）可用。`export` 不会从会话自动摘要，会写出空的 `work_state` 并记录 `work_state.not_inferred`。手写或示例 bundle 可以带上完整状态 |
 | 2/3 | 有损对话 | 协议字段可用（见示例 bundle）。适配器是 stub：`--session` 只记损失，不解析 Cursor JSONL，也不写入 Trae 加密库 |
 
+本地 Web 已能完成导出、导入、转换，并按 `loss_report` 做确认式修复。`export` 仍然不会从会话自动摘要。
+
 即将做的事（尚未实现）：`acb summarize`、嵌套规则扫描、真正的用户级配置读写、MCP `env` 脱敏、从 Cursor JSONL 抽出 transcript。详见 [`ROADMAP.md`](ROADMAP.md)。
 
 ## 快速开始
@@ -49,9 +51,12 @@ node dist/index.js import -a trae -p /path/to/project -f out.bundle.json --dry-r
 
 # 同仓库 Cursor → Trae 一键转换
 node dist/index.js convert --from cursor --to trae -p /path/to/project -o bridge.bundle.json
+
+# 本地 Web（构建页面并监听 127.0.0.1:4173）
+npm run web
 ```
 
-开发时也可：`npm run dev -- validate examples/sample.bundle.json`
+开发时也可：`npm run dev -- validate examples/sample.bundle.json`。前端热更新用 `npm run web:dev`。
 
 需要 Node.js 20+。构建后 bin 名为 `acb` 与 `agent-context-bridge`（入口都是 `dist/index.js`）。
 
@@ -64,8 +69,23 @@ node dist/index.js convert --from cursor --to trae -p /path/to/project -o bridge
 | `acb import -a <…> -p <dir> -f <file>` | 写入目标端目录布局；已有 Work State 时附带 `.acb/WORK_STATE.md` |
 | `acb convert --from … --to … -p <dir>` | 先导出再导入。`-o` / `--out-bundle` 保留中间 bundle。`--dry-run` 仍会导出，导入只预演 |
 | `acb adapters` | 列出适配器与项目级路径 |
+| `acb web` | 启动本地 Web。`--port` 默认 `4173`，`--host` 默认 `127.0.0.1`。`--dev` 改用 Vite 开发服务 |
 
 `--include-user` 已挂在 `export` / `convert` 上，v0.1 只记录「用户级尚未实现」，不会读写 `~/.cursor` 或 `~/.trae`。
+
+## 本地 Web
+
+`npm run web` 会先构建页面，再启动本地服务。CLI（`npm run build`）和前端（`npm run build:web`）都构建过之后，也可以 `node dist/index.js web`。服务默认只绑定本机回环地址，读写的是你本机上的项目路径。
+
+页面和 CLI 共用同一套适配器、Zod 校验和 Work State Markdown。
+
+1. 填写项目路径，或上传一份 bundle。
+2. 在 Cursor 与 Trae 之间导出、导入或转换，并查看 `loss_report`。勾选预演时，导入不写项目文件。
+3. 开始逐条修复。向导按损失项提问，根据回答起草 Work State。
+4. 每一条草案都要确认或拒绝之后才写入。也可以一次确认或拒绝全部待定草案。对话里输入「确认」「拒绝」「修改」「全部确认」「全部拒绝」，效果和按钮相同。
+5. 下载更新后的 bundle，或把已确认的内容写到项目里的 `.acb/WORK_STATE.md`。
+
+未确认的草案不会进入 bundle，也不会写进项目。拒绝和确认跳过都会留在 `loss_report` 里（`repair.declined` / `repair.skipped`）；确认写入记为 `repair.applied`。
 
 ## 协议
 
@@ -88,6 +108,7 @@ transcript?   messages[]（可选；可标 dropped_fields，附件默认不内�
 
 - TypeScript · Node 20+ · ESM
 - `commander` CLI · `zod` 运行时校验
+- Vite 本地 Web（`npm run web`）
 - License: MIT
 
 ## 安全提示
@@ -96,4 +117,4 @@ Bundle 中的 MCP `env` 在 v0.1 **不会**自动脱敏。不要把含密钥的 
 
 ## 贡献 / 下一步
 
-见 [`ROADMAP.md`](ROADMAP.md)。建议的下一编码步：补全嵌套 rules / `AGENTS.md` 扫描，并实现 `acb summarize`（Layer 1）。
+见 [`ROADMAP.md`](ROADMAP.md)。本地 Web 与确认式修复已经可用。建议的下一编码步：补全嵌套 rules / `AGENTS.md` 扫描，并实现 `acb summarize`（Layer 1）。

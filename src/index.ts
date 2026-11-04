@@ -4,6 +4,7 @@ import { runValidate } from "./commands/validate.js";
 import { runExport } from "./commands/export.js";
 import { runImport } from "./commands/import.js";
 import { runConvert } from "./commands/convert.js";
+import { runWeb } from "./commands/web.js";
 import { listAdapters } from "./adapters/index.js";
 
 const program = new Command();
@@ -74,6 +75,20 @@ program
       outBundle: opts.outBundle,
       dryRun: opts.dryRun,
       includeUser: opts.includeUser,
+    });
+  });
+
+program
+  .command("web")
+  .description("Start the local web UI (export, import, convert, guided repair)")
+  .option("-p, --port <n>", "Port", "4173")
+  .option("--host <host>", "Bind address (default 127.0.0.1)", "127.0.0.1")
+  .option("--dev", "Serve the Vite dev middleware instead of web/dist", false)
+  .action(async (opts) => {
+    process.exitCode = await runWeb({
+      port: opts.port,
+      host: opts.host,
+      dev: opts.dev,
     });
   });
 

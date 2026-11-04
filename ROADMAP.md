@@ -21,6 +21,12 @@
    - [ ] Trae：引导 Export Chat / 明确加密库不可自动导入  
    - [ ] `convert --with-transcript` 开关与体积限制
 
+5. **本地 Web 与交互式修复** ✅  
+   - [x] `npm run web` / `acb web`，默认只监听 `127.0.0.1`  
+   - [x] 项目路径或上传 bundle；Cursor ↔ Trae 导出 / 导入 / 转换，并展示 `loss_report`  
+   - [x] 修复向导逐条提问并起草 Work State；单条或批量确认 / 拒绝之后才写入  
+   - [ ] 可选外部模型起草；确认之后才写入的门槛保持不变
+
 ## 之后
 
 - 更多适配器（Codex、Claude Code…）——仍走同一 Bundle  
